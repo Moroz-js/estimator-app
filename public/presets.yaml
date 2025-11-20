@@ -1,0 +1,34 @@
+presets:
+  - title: "Onboarding"
+    tasks:
+      - type: "DE"
+        title: "Welcome screen"
+        estimate: 3
+      - type: "DE"
+        title: "Permissions request"
+        estimate: 2
+      - type: "BA"
+        title: "Tracking events spec"
+        estimate: 2
+  - title: "User profile"
+    tasks:
+      - type: "DE"
+        title: "Profile view"
+        estimate: 4
+      - type: "DE"
+        title: "Edit profile"
+        estimate: 4
+      - type: "NC"
+        title: "Avatar upload"
+        estimate: 2
+  - title: "Notifications"
+    tasks:
+      - type: "BA"
+        title: "Notifications scenarios"
+        estimate: 3
+      - type: "DE"
+        title: "In-app notifications UI"
+        estimate: 5
+      - type: "NC"
+        title: "Push setup"
+        estimate: 4
