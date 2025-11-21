@@ -100,6 +100,32 @@ GRANT EXECUTE ON FUNCTION find_user_id_by_email(TEXT) TO authenticated;
 
 COMMENT ON FUNCTION find_user_id_by_email IS 'Находит ID пользователя по email адресу';
 
+-- Функция для получения email пользователя по ID
+-- Используется для отображения списка участников проекта
+CREATE OR REPLACE FUNCTION get_user_email_by_id(user_id UUID)
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  user_email TEXT;
+BEGIN
+  -- Получаем email пользователя из auth.users
+  SELECT email INTO user_email
+  FROM auth.users
+  WHERE id = user_id
+  LIMIT 1;
+  
+  RETURN user_email;
+END;
+$$;
+
+-- Даём права на выполнение функции аутентифицированным пользователям
+GRANT EXECUTE ON FUNCTION get_user_email_by_id(UUID) TO authenticated;
+
+COMMENT ON FUNCTION get_user_email_by_id IS 'Получает email пользователя по его ID';
+
 -- ============================================
 -- КОММЕНТАРИИ К ТАБЛИЦАМ И КОЛОНКАМ
 -- ============================================
@@ -116,24 +142,13 @@ COMMENT ON COLUMN public.project_members.invited_by_email IS 'Email пригла
 -- ============================================
 -- ПОЛИТИКИ БЕЗОПАСНОСТИ (RLS)
 -- ============================================
--- Раскомментируйте и настройте при необходимости
+-- ВАЖНО: RLS отключен для упрощения
+-- Страница /project/[id]/preview доступна всем без авторизации
+-- Если знаешь ID проекта, можешь посмотреть превью
 
+-- Раскомментируйте и настройте RLS при необходимости:
 -- ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 -- ALTER TABLE public.project_members ENABLE ROW LEVEL SECURITY;
-
--- Пример политики: пользователь видит только свои проекты
--- CREATE POLICY "Users can view own projects" ON public.projects
---   FOR SELECT USING (auth.uid() = owner_id);
-
--- Пример политики: пользователь видит проекты, где он участник
--- CREATE POLICY "Users can view member projects" ON public.projects
---   FOR SELECT USING (
---     EXISTS (
---       SELECT 1 FROM public.project_members
---       WHERE project_members.project_id = projects.id
---       AND project_members.user_id = auth.uid()
---     )
---   );
 
 -- ============================================
 -- СХЕМА ГОТОВА

@@ -1,8 +1,10 @@
 "use client";
-import { Epic, Subtask, SubtaskType } from "@/lib/types";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Epic, Subtask, SubtaskType, PresencePayload } from "@/lib/types";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import jsyaml from "js-yaml";
+import { UserAvatarGroup } from "./UserAvatar";
+import { useProjectCollab } from "./ProjectCollabProvider";
 
 type TaskField = "type" | "title" | "estimate";
 type ValidationMap = Record<string, { epicTitle?: boolean; noTasks?: boolean; tasks?: Record<string, Partial<Record<TaskField, boolean>>> }>;
@@ -11,19 +13,80 @@ export interface EpicEditorProps {
   value: Epic[];
   onChange: (next: Epic[]) => void;
   errors?: ValidationMap;
+  editingByEpicId?: Record<string, PresencePayload[]>;
+  editingByTaskId?: Record<string, PresencePayload[]>;
 }
 
 function uid(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export default function EpicEditor({ value, onChange, errors }: EpicEditorProps) {
+export default function EpicEditor({ value, onChange, errors, editingByEpicId, editingByTaskId }: EpicEditorProps) {
   const [query, setQuery] = useState("");
   const [selectedEpicId, setSelectedEpicId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [presetsOpen, setPresetsOpen] = useState(false);
   const [presets, setPresets] = useState<Array<{ title: string; tasks: { type: string; title: string; estimate?: number }[] }>>([]);
   const [previewIdx, setPreviewIdx] = useState<number | null>(null);
+
+  // Realtime collaboration
+  let collab: ReturnType<typeof useProjectCollab> | null = null;
+  try {
+    collab = useProjectCollab();
+  } catch {
+    // Если не в контексте, collab будет null
+  }
+
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Обработчики фокуса для presence
+  const handleFocus = useCallback((epicId: string, taskId?: string) => {
+    if (!collab) return;
+    
+    // Очищаем предыдущий таймер
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    collab.updatePresence({
+      currentEpicId: epicId,
+      currentTaskId: taskId,
+      isTyping: true,
+    });
+  }, [collab]);
+
+  const handleBlur = useCallback(() => {
+    if (!collab) return;
+
+    // Debounce для isTyping
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    typingTimeoutRef.current = setTimeout(() => {
+      collab.updatePresence({
+        currentEpicId: undefined,
+        currentTaskId: undefined,
+        isTyping: false,
+      });
+    }, 2000);
+  }, [collab]);
+
+  const handleInput = useCallback(() => {
+    if (!collab) return;
+
+    // При вводе сбрасываем таймер
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    // Устанавливаем новый таймер
+    typingTimeoutRef.current = setTimeout(() => {
+      collab.updatePresence({
+        isTyping: false,
+      });
+    }, 2000);
+  }, [collab]);
 
   const loadPresets = async () => {
     if (presets.length) return;
@@ -56,6 +119,14 @@ export default function EpicEditor({ value, onChange, errors }: EpicEditorProps)
     const next = [...value];
     next.splice(insertAt, 0, nextEpic);
     onChange(next);
+    
+    // Отправляем патч
+    if (collab) {
+      collab.sendPatch({
+        type: "epic_create" as const,
+        epic: nextEpic,
+      } as any);
+    }
   };
 
   const addEpicFromPreset = (presetIndex: number) => {
@@ -83,18 +154,49 @@ export default function EpicEditor({ value, onChange, errors }: EpicEditorProps)
     onChange(next);
     setSelectedEpicId(epic.id);
     setPresetsOpen(false);
+    
+    // Отправляем патч
+    if (collab) {
+      collab.sendPatch({
+        type: "epic_create" as const,
+        epic,
+      } as any);
+    }
   };
 
-  const removeEpic = (id: string) => onChange(value.filter((e) => e.id !== id));
+  const removeEpic = (id: string) => {
+    onChange(value.filter((e) => e.id !== id));
+    if (collab) {
+      collab.sendPatch({
+        type: "epic_delete" as const,
+        epicId: id,
+      } as any);
+    }
+  };
 
-  const updateEpic = (id: string, patch: Partial<Epic>) =>
+  const updateEpic = (id: string, patch: Partial<Epic>) => {
     onChange(value.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+    if (collab) {
+      collab.sendPatch({
+        type: "epic_update" as const,
+        epicId: id,
+        payload: patch,
+      } as any);
+    }
+  };
 
   const addTask = (epicId: string) => {
     const task: Subtask = { id: uid("t"), type: "", title: "", estimate: undefined, comment: "" };
     onChange(
       value.map((e) => (e.id === epicId ? { ...e, tasks: [...e.tasks, task] } : e))
     );
+    if (collab) {
+      collab.sendPatch({
+        type: "task_create" as const,
+        epicId,
+        task,
+      } as any);
+    }
   };
 
   const updateTask = (epicId: string, taskId: string, patch: Partial<Subtask>) => {
@@ -105,12 +207,27 @@ export default function EpicEditor({ value, onChange, errors }: EpicEditorProps)
           : e
       )
     );
+    if (collab) {
+      collab.sendPatch({
+        type: "task_update" as const,
+        epicId,
+        taskId,
+        payload: patch,
+      } as any);
+    }
   };
 
   const removeTask = (epicId: string, taskId: string) => {
     onChange(
       value.map((e) => (e.id === epicId ? { ...e, tasks: e.tasks.filter((t) => t.id !== taskId) } : e))
     );
+    if (collab) {
+      collab.sendPatch({
+        type: "task_delete" as const,
+        epicId,
+        taskId,
+      } as any);
+    }
   };
 
   // Move helpers
@@ -174,6 +291,14 @@ export default function EpicEditor({ value, onChange, errors }: EpicEditorProps)
     const [moved] = list.splice(from, 1);
     list.splice(to, 0, moved);
     onChange(list);
+    
+    // Отправляем reorder патч
+    if (collab) {
+      collab.sendPatch({
+        type: "epic_reorder" as const,
+        epicOrder: list.map((e) => e.id),
+      } as any);
+    }
   };
 
   const onTaskDragStart = (epicId: string, taskId: string) => (e: React.DragEvent) => {
@@ -191,6 +316,8 @@ export default function EpicEditor({ value, onChange, errors }: EpicEditorProps)
     draggingTask.current = null;
     setDragOverTask(null);
     if (!drag || drag.epicId !== epicId) return; // only within same epic
+    
+    let reorderedTasks: string[] = [];
     onChange(
       value.map((ep) => {
         if (ep.id !== epicId) return ep;
@@ -200,9 +327,19 @@ export default function EpicEditor({ value, onChange, errors }: EpicEditorProps)
         if (from < 0 || to < 0) return ep;
         const [moved] = list.splice(from, 1);
         list.splice(to, 0, moved);
+        reorderedTasks = list.map((t) => t.id);
         return { ...ep, tasks: list };
       })
     );
+    
+    // Отправляем reorder патч
+    if (collab && reorderedTasks.length > 0) {
+      collab.sendPatch({
+        type: "task_reorder" as const,
+        epicId,
+        taskOrder: reorderedTasks,
+      } as any);
+    }
   };
 
   // ensure selection exists
@@ -326,6 +463,11 @@ export default function EpicEditor({ value, onChange, errors }: EpicEditorProps)
               </span>
               <div className="ep-title">{epic.title || 'Без названия'}</div>
               <span className="ep-badge">{epic.tasks.length}</span>
+              {editingByEpicId && editingByEpicId[epic.id] && editingByEpicId[epic.id].length > 0 && (
+                <div style={{marginLeft: 'auto', marginRight: 8}}>
+                  <UserAvatarGroup users={editingByEpicId[epic.id]} maxVisible={2} size="small" />
+                </div>
+              )}
               <div className="ep-actions">
                 <button className="btn danger" title="Удалить" type="button" onClick={(e) => { e.stopPropagation(); removeEpic(epic.id); }}>✕</button>
               </div>
@@ -348,6 +490,9 @@ export default function EpicEditor({ value, onChange, errors }: EpicEditorProps)
                   <input
                     value={activeEpic.title}
                     onChange={(e) => updateEpic(activeEpic.id, { title: e.target.value })}
+                    onFocus={() => handleFocus(activeEpic.id)}
+                    onBlur={handleBlur}
+                    onInput={handleInput}
                     className={(errors && errors[activeEpic.id]?.epicTitle) ? 'invalid-input' : undefined}
                     placeholder="Название эпика"
                   />
@@ -395,6 +540,8 @@ export default function EpicEditor({ value, onChange, errors }: EpicEditorProps)
                         <select
                           value={t.type}
                           onChange={(e) => updateTask(activeEpic.id, t.id, { type: e.target.value as SubtaskType })}
+                          onFocus={() => handleFocus(activeEpic.id, t.id)}
+                          onBlur={handleBlur}
                           style={{ width: 80 }}
                           className={tErr.type ? 'invalid-input' : undefined}
                         >
@@ -408,6 +555,9 @@ export default function EpicEditor({ value, onChange, errors }: EpicEditorProps)
                         <input
                           value={t.title}
                           onChange={(e) => updateTask(activeEpic.id, t.id, { title: e.target.value })}
+                          onFocus={() => handleFocus(activeEpic.id, t.id)}
+                          onBlur={handleBlur}
+                          onInput={handleInput}
                           className={tErr.title ? 'invalid-input' : undefined}
                           placeholder="Название задачи"
                         />
@@ -421,11 +571,17 @@ export default function EpicEditor({ value, onChange, errors }: EpicEditorProps)
                             const v = e.target.value;
                             updateTask(activeEpic.id, t.id, { estimate: v === '' ? undefined : Math.max(0, Number(v)) });
                           }}
+                          onFocus={() => handleFocus(activeEpic.id, t.id)}
+                          onBlur={handleBlur}
+                          onInput={handleInput}
                           className={tErr.estimate ? 'invalid-input' : undefined}
                         />
                       </td>
                       <td>
-                        <div style={{display:'flex', gap:6, justifyContent:'flex-end'}}>
+                        <div style={{display:'flex', gap:6, justifyContent:'flex-end', alignItems:'center'}}>
+                          {editingByTaskId && editingByTaskId[t.id] && editingByTaskId[t.id].length > 0 && (
+                            <UserAvatarGroup users={editingByTaskId[t.id]} maxVisible={2} size="small" />
+                          )}
                           <button
                             type="button"
                             className="icon-btn"

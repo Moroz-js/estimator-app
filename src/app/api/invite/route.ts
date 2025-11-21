@@ -69,13 +69,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Пользователь уже добавлен в проект" }, { status: 400 });
     }
 
-    // Добавляем пользователя в проект
+    // Добавляем пользователя в проект с ролью editor (может редактировать, но не приглашать)
     const { error: insertError } = await supabase
       .from("project_members")
       .insert({
         project_id: projectId,
         user_id: invitedUserId,
-        role: "viewer",
+        role: "editor",
         invited_by: user.id,
         invited_by_email: user.email,
       });

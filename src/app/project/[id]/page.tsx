@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import EstimatorApp from "@/components/EstimatorApp";
+import { ProjectCollabProvider } from "@/components/ProjectCollabProvider";
 import { supabase } from "@/lib/supabaseClient";
-import type { AppState, Epic, Subtask } from "@/lib/types";
+import { applyRemotePatch } from "@/lib/realtimePatchHandler";
+import type { AppState, Epic, Subtask, RealtimeMessage } from "@/lib/types";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -16,6 +18,7 @@ function normalizeAppState(raw: any): AppState {
     date: raw?.project?.date ?? today(),
     type: raw?.project?.type === "Mobile" ? "Mobile" : "Web",
     stack: Array.isArray(raw?.project?.stack) ? raw.project.stack : [],
+    language: (raw?.project?.language === "ru" ? "ru" : "en"),
   } as AppState["project"];
 
   const safeEpics: Epic[] = Array.isArray(raw?.epics)
@@ -48,6 +51,36 @@ export default function ProjectPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [initialState, setInitialState] = useState<AppState | undefined>(undefined);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string>("");
+  const [isOwner, setIsOwner] = useState(false);
+
+  // Ref для хранения актуального состояния (для realtime патчей)
+  const stateRef = useRef<AppState | undefined>(undefined);
+  const setStateCallback = useRef<((state: AppState) => void) | null>(null);
+
+  // Timestamps для разрешения конфликтов
+  const timestampsRef = useRef({
+    projectMeta: Date.now(),
+    epics: new Map<string, number>(),
+    tasks: new Map<string, number>(),
+  });
+
+  // Обработчик remote патчей (должен быть до условных return)
+  const handleRemotePatch = useCallback((message: RealtimeMessage) => {
+    if (!stateRef.current || !setStateCallback.current) return;
+
+    const newState = applyRemotePatch(
+      stateRef.current,
+      message,
+      timestampsRef.current
+    );
+
+    if (newState) {
+      stateRef.current = newState;
+      setStateCallback.current(newState);
+    }
+  }, []);
 
   useEffect(() => {
     if (!projectId) return;
@@ -64,14 +97,20 @@ export default function ProjectPage() {
           return;
         }
 
+        setCurrentUserId(session.user.id);
+        setCurrentUserEmail(session.user.email || "");
+
         const { data, error } = await supabase
           .from("projects")
-          .select("payload")
+          .select("payload, owner_id")
           .eq("id", projectId)
           .single();
 
         if (error) throw error;
         if (!data?.payload) throw new Error("Проект не найден");
+
+        // Проверяем, является ли пользователь владельцем
+        setIsOwner(data.owner_id === session.user.id);
 
         const normalized = normalizeAppState(data.payload as any);
         setInitialState(normalized);
@@ -143,5 +182,33 @@ export default function ProjectPage() {
     router.replace("/");
   };
 
-  return <EstimatorApp initialState={initialState} onSave={handleSave} onClose={handleClose} projectId={projectId} />;
+  // Если нет currentUserId или email, не показываем realtime
+  const realtimeEnabled = !!(currentUserId && currentUserEmail && projectId);
+
+  return (
+    <ProjectCollabProvider
+      projectId={projectId || ""}
+      currentUser={{
+        id: currentUserId || "",
+        email: currentUserEmail,
+      }}
+      onRemotePatch={handleRemotePatch}
+      enabled={realtimeEnabled}
+    >
+      <EstimatorApp
+        initialState={initialState}
+        onSave={handleSave}
+        onClose={handleClose}
+        projectId={projectId}
+        currentUserId={currentUserId || undefined}
+        isOwner={isOwner}
+        onStateChange={(newState) => {
+          stateRef.current = newState;
+        }}
+        onSetStateCallback={(callback) => {
+          setStateCallback.current = callback;
+        }}
+      />
+    </ProjectCollabProvider>
+  );
 }

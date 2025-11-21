@@ -94,6 +94,9 @@ export default function InviteModal({ isOpen, onClose, onInvite }: InviteModalPr
                 required
                 disabled={inviting}
               />
+              <div className="small" style={{ color: "#64748b", marginTop: 6 }}>
+                Приглашённый пользователь сможет редактировать проект, но не сможет приглашать других
+              </div>
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button

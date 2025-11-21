@@ -3,13 +3,10 @@ import EpicEditor from "@/components/EpicEditor";
 import StackMultiSelect from "@/components/StackMultiSelect";
 import YAMLPreview from "@/components/YAMLPreview";
 import InviteModal from "@/components/InviteModal";
-import ProjectMembers from "@/components/ProjectMembers";
-import { UserAvatarGroup } from "@/components/UserAvatar";
-import { useProjectCollab } from "@/components/ProjectCollabProvider";
-import { AppState, Epic, SubtaskType, ProjectLanguage } from "@/lib/types";
+import { AppState, Epic, SubtaskType } from "@/lib/types";
 import { generateYaml } from "@/lib/yaml";
 import jsyaml from "js-yaml";
-import { ChangeEvent, useEffect, useRef, useState, useCallback } from "react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -34,30 +31,15 @@ type EstimatorAppProps = {
   onSave?: (state: AppState) => Promise<void> | void;
   onClose?: () => void;
   projectId?: string;
-  currentUserId?: string;
-  isOwner?: boolean;
-  // Realtime callbacks
-  onStateChange?: (state: AppState) => void;
-  onSetStateCallback?: (callback: (state: AppState) => void) => void;
 };
 
-export default function EstimatorApp({ 
-  initialState, 
-  onSave, 
-  onClose, 
-  projectId, 
-  currentUserId, 
-  isOwner = true,
-  onStateChange,
-  onSetStateCallback,
-}: EstimatorAppProps) {
+export default function EstimatorApp({ initialState, onSave, onClose, projectId }: EstimatorAppProps) {
   const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
   const [yaml, setYaml] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
-  const [showMembers, setShowMembers] = useState(false);
   const [state, setState] = useState<AppState>(
     initialState ?? {
       project: {
@@ -65,7 +47,6 @@ export default function EstimatorApp({
         date: today(),
         type: "Web",
         stack: [],
-        language: "en",
       },
       epics: [],
     }
@@ -76,45 +57,13 @@ export default function EstimatorApp({
   const initialRef = useRef<AppState | null>(null);
   const dirtyRef = useRef(false);
 
-  // Realtime collaboration
-  let collab: ReturnType<typeof useProjectCollab> | null = null;
-  try {
-    collab = useProjectCollab();
-  } catch {
-    // Если не в контексте ProjectCollabProvider, collab будет null
-  }
-
-  // Debounce для isTyping
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Обёртка setState для уведомления о изменениях
-  const setStateWithNotify = useCallback((newState: AppState | ((prev: AppState) => AppState)) => {
-    setState((prev) => {
-      const next = typeof newState === "function" ? newState(prev) : newState;
-      onStateChange?.(next);
-      return next;
-    });
-  }, [onStateChange]);
-
-  // Передаём callback для внешнего обновления состояния (для remote патчей)
-  useEffect(() => {
-    if (onSetStateCallback) {
-      onSetStateCallback(setStateWithNotify);
-    }
-  }, [onSetStateCallback, setStateWithNotify]);
-
   useEffect(() => {
     if (initialState) {
-      setStateWithNotify(initialState);
+      setState(initialState);
       initialRef.current = initialState;
       dirtyRef.current = false;
-      
-      // Если проект уже заполнен (имя и стек), открываем сразу шаг 2 (эпики)
-      if (initialState.project.name && initialState.project.stack.length > 0) {
-        setStep(2);
-      }
     }
-  }, [initialState, setStateWithNotify]);
+  }, [initialState]);
 
   useEffect(() => {
     if (!initialState && !initialRef.current) {
@@ -132,20 +81,11 @@ export default function EstimatorApp({
   const canNext = state.project.name.trim().length > 0;
 
   const updateProject = <K extends keyof AppState["project"]>(key: K, val: AppState["project"][K]) => {
-    setStateWithNotify((s: AppState) => ({ ...s, project: { ...s.project, [key]: val } }));
-    
-    // Отправляем realtime патч
-    if (collab && projectId) {
-      const payload: Partial<AppState["project"]> = { [key]: val } as any;
-      collab.sendPatch({
-        type: "project_meta_update" as const,
-        payload,
-      } as any);
-    }
+    setState((s: AppState) => ({ ...s, project: { ...s.project, [key]: val } }));
   };
 
   const applyFrontendToExistingEpics = (frontend: "Weweb" | "Webflow") => {
-    setStateWithNotify((s) => {
+    setState((s) => {
       if (s.epics.length === 0) return s as AppState;
       const updated = s.epics.map((e) => {
         if (e.title !== "Initialization") return e;
@@ -163,7 +103,7 @@ export default function EstimatorApp({
   };
 
   const applyBackendToExistingEpics = (backend: "Firebase" | "Supabase") => {
-    setStateWithNotify((s) => {
+    setState((s) => {
       if (s.epics.length === 0) return s;
       const updated = s.epics.map((e) => {
         if (e.title !== "Initialization") return e;
@@ -182,7 +122,7 @@ export default function EstimatorApp({
     lastDefaultsSig.current = `${isMobile ? 'mobile' : 'web'}|${backend}`;
   };
 
-  const updateEpics = (epics: Epic[]) => setStateWithNotify((s: AppState) => ({ ...s, epics }));
+  const updateEpics = (epics: Epic[]) => setState((s: AppState) => ({ ...s, epics }));
 
   const validate = (epics: Epic[]): ValidationMap => {
     const out: ValidationMap = {};
@@ -314,20 +254,9 @@ export default function EstimatorApp({
     }
   };
 
-  const handleShare = async () => {
-    if (!projectId) {
-      alert("Сначала сохраните проект");
-      return;
-    }
-    
-    const fullUrl = `${window.location.origin}/project/${projectId}/preview`;
-    await navigator.clipboard.writeText(fullUrl);
-    alert("Ссылка скопирована в буфер обмена!");
-  };
-
   const currentPresets = presetsByType(state.project.type);
   const setTypeAndFilterStack = (type: "Web" | "Mobile") => {
-    setStateWithNotify((s) => {
+    setState((s) => {
       const customs = s.project.stack.filter((x) => x.startsWith("Custom:"));
       const filteredPresets = s.project.stack.filter((x) => currentPresets.includes(x));
       const nextPresets = presetsByType(type);
@@ -402,7 +331,7 @@ export default function EstimatorApp({
 
     if (state.epics.length === 0) {
       const defaults = await buildDefaultEpics();
-      setStateWithNotify((s) => ({ ...s, epics: defaults }));
+      setState((s) => ({ ...s, epics: defaults }));
       lastDefaultsSig.current = sig;
       setStep(2);
       return;
@@ -412,7 +341,7 @@ export default function EstimatorApp({
       const ok = window.confirm("Изменился тип проекта или БД. Пересоздать эпики по текущему шаблону? Ваши правки будут перезаписаны.");
       if (ok) {
         const defaults = await buildDefaultEpics();
-        setStateWithNotify((s) => ({ ...s, epics: defaults }));
+        setState((s) => ({ ...s, epics: defaults }));
         lastDefaultsSig.current = sig;
       }
     }
@@ -428,7 +357,6 @@ export default function EstimatorApp({
           </button>
         </div>
       )}
-      <div style={{ width: "100%", maxWidth: 1400, display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
       {step === 0 && (
         <div className="card animate-in" style={{width:"100%"}}>
           <div className="card-header">
@@ -451,25 +379,6 @@ export default function EstimatorApp({
                 value={state.project.date}
                 onChange={(e: ChangeEvent<HTMLInputElement>) => updateProject("date", e.target.value)}
               />
-            </div>
-            <div>
-              <label>Язык проекта</label>
-              <div style={{display:"flex", gap:8}}>
-                <button
-                  className={state.project.language === "en" ? "btn primary" : "btn"}
-                  type="button"
-                  onClick={() => updateProject("language", "en")}
-                >
-                  English
-                </button>
-                <button
-                  className={state.project.language === "ru" ? "btn primary" : "btn"}
-                  type="button"
-                  onClick={() => updateProject("language", "ru")}
-                >
-                  Русский
-                </button>
-              </div>
             </div>
             <div style={{textAlign:"right", marginTop: 4}}>
               <button className="btn primary" type="button" disabled={!canNext} onClick={() => setStep(1)}>
@@ -512,7 +421,7 @@ export default function EstimatorApp({
               <StackMultiSelect
                 value={state.project.stack}
                 onChange={(v) => {
-                  setStateWithNotify((s) => {
+                  setState((s) => {
                     const prev = s.project.stack;
                     const added = v.find((x) => !prev.includes(x));
                     let next = v;
@@ -523,15 +432,6 @@ export default function EstimatorApp({
                     }
                     return { ...s, project: { ...s.project, stack: next } } as AppState;
                   });
-                  
-                  // Отправляем realtime патч
-                  if (collab && projectId) {
-                    collab.sendPatch({
-                      type: "project_meta_update" as const,
-                      payload: { stack: v },
-                    } as any);
-                  }
-                  
                   const backend = v.includes("Firebase") ? "Firebase" : v.includes("Supabase") ? "Supabase" : null;
                   if (backend) applyBackendToExistingEpics(backend);
                   const frontend = v.includes("Weweb") ? "Weweb" : v.includes("Webflow") ? "Webflow" : null;
@@ -580,68 +480,10 @@ export default function EstimatorApp({
 
       {step === 2 && (
         <>
-        {/* Компактная панель информации о проекте */}
-        {state.project.name && state.project.stack.length > 0 && (
-          <div className="card animate-in" style={{width:"100%", maxWidth:"1280px", marginBottom: 16, padding: 16}}>
-            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:16, flexWrap:'wrap'}}>
-              <div style={{display:'flex', alignItems:'center', gap:16, flex:1, minWidth:0}}>
-                <div style={{minWidth:0}}>
-                  <div style={{fontWeight:600, fontSize:16, marginBottom:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
-                    {state.project.name}
-                  </div>
-                  <div className="small" style={{color:'#64748b'}}>
-                    {state.project.type} • {state.project.language === "en" ? "English" : "Русский"} • {state.project.date}
-                  </div>
-                </div>
-                <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
-                  {state.project.stack.map((tech) => (
-                    <span
-                      key={tech}
-                      className="small"
-                      style={{
-                        background: "#f1f5f9",
-                        padding: "4px 10px",
-                        borderRadius: 6,
-                        color: "#475569",
-                        border: "1px solid #e2e8f0",
-                        whiteSpace:'nowrap'
-                      }}
-                    >
-                      {tech}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div style={{display:'flex', alignItems:'center', gap:12, flexShrink:0}}>
-                {collab && (
-                  <>
-                    {collab.presence.length > 0 && (
-                      <div style={{display:'flex', alignItems:'center', gap:8}}>
-                        <span className="small" style={{color:'#64748b', whiteSpace:'nowrap'}}>
-                          Сейчас в проекте:
-                        </span>
-                        <UserAvatarGroup users={collab.presence} maxVisible={5} size="small" />
-                      </div>
-                    )}
-                    {!collab.isConnected && collab.presence.length === 0 && (
-                      <span className="small" style={{color:'#f59e0b', whiteSpace:'nowrap'}} title="Нет соединения для совместной работы">
-                        ⚠️ Offline
-                      </span>
-                    )}
-                  </>
-                )}
-                <button className="btn" type="button" onClick={() => setStep(0)}>
-                  Изменить
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         <div className="card animate-in" style={{width:"100%", maxWidth:"1280px"}}>
           <div className="card-header">
             <h2>Эпики и подзадачи</h2>
-            <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+            <div style={{display:'flex', alignItems:'center', gap:8}}>
               <div className="small">Шаг 3 из 3</div>
               {(() => {
                 if (saving) {
@@ -683,7 +525,7 @@ export default function EstimatorApp({
                   const ok = window.confirm("Пересоздать эпики по текущему шаблону? Ваши правки будут перезаписаны.");
                   if (!ok) return;
                   const defaults = await buildDefaultEpics();
-                  setStateWithNotify((s) => ({ ...s, epics: defaults }));
+                  setState((s) => ({ ...s, epics: defaults }));
                   const isMobile = state.project.type === "Mobile";
                   const backend = state.project.stack.includes("Firebase") ? "Firebase" : "Supabase";
                   lastDefaultsSig.current = `${isMobile ? 'mobile' : 'web'}|${backend}`;
@@ -698,31 +540,15 @@ export default function EstimatorApp({
               Обнаружены ошибки в эпиках: {Object.keys(errors).length}. Проверьте подсветку слева и поля задач.
             </div>
           )}
-          <EpicEditor 
-            value={state.epics} 
-            onChange={updateEpics} 
-            errors={errors ?? undefined}
-            editingByEpicId={collab?.editingByEpicId}
-            editingByTaskId={collab?.editingByTaskId}
-          />
-          <div style={{display:"flex", justifyContent:"space-between", marginTop: 8, gap: 8, flexWrap:"wrap"}}>
+          <EpicEditor value={state.epics} onChange={updateEpics} errors={errors ?? undefined} />
+          <div style={{display:"flex", justifyContent:"space-between", marginTop: 8, gap: 8}}>
+            <button className="btn" type="button" onClick={() => setStep(1)}>Назад</button>
             <div style={{display:"flex", gap:8}}>
-              <button className="btn" type="button" onClick={() => setStep(1)}>Назад</button>
-              {projectId && isOwner && (
-                <>
-                  <button className="btn" type="button" onClick={handleShare}>
-                    Скопировать ссылку
-                  </button>
-                  <button className="btn" type="button" onClick={handleInviteClick} disabled={inviting}>
-                    Пригласить
-                  </button>
-                  <button className="btn" type="button" onClick={() => setShowMembers(!showMembers)}>
-                    {showMembers ? "Скрыть участников" : "Показать участников"}
-                  </button>
-                </>
+              {projectId && (
+                <button className="btn" type="button" onClick={handleInviteClick} disabled={inviting}>
+                  Пригласить
+                </button>
               )}
-            </div>
-            <div style={{display:"flex", gap:8}}>
               {onSave && (
                 <button className="btn" type="button" onClick={handleSave} disabled={saving}>
                   {saving ? "Сохранение..." : "Сохранить проект"}
@@ -733,15 +559,6 @@ export default function EstimatorApp({
               </button>
             </div>
           </div>
-
-          {/* Список участников */}
-          {showMembers && projectId && currentUserId && (
-            <ProjectMembers
-              projectId={projectId}
-              currentUserId={currentUserId}
-              isOwner={isOwner}
-            />
-          )}
         </div>
         </>
       )}
@@ -757,8 +574,6 @@ export default function EstimatorApp({
           </div>
         </div>
       )}
-
-      </div>
 
       <InviteModal
         isOpen={inviteModalOpen}
