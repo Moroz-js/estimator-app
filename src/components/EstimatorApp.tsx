@@ -63,12 +63,12 @@ export default function EstimatorApp({
       project: {
         name: "",
         date: today(),
-        type: "Web",
+        type: "Web" as const,
         stack: [],
-        language: "en",
+        language: "en" as const,
       },
       epics: [],
-    }
+    } as AppState
   );
   const lastDefaultsSig = useRef<string | null>(null);
   const [errors, setErrors] = useState<ValidationMap | null>(null);
