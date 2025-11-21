@@ -143,5 +143,5 @@ export default function ProjectPage() {
     router.replace("/");
   };
 
-  return <EstimatorApp initialState={initialState} onSave={handleSave} onClose={handleClose} />;
+  return <EstimatorApp initialState={initialState} onSave={handleSave} onClose={handleClose} projectId={projectId} />;
 }

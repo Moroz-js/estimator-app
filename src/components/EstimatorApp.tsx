@@ -29,13 +29,16 @@ type EstimatorAppProps = {
   initialState?: AppState;
   onSave?: (state: AppState) => Promise<void> | void;
   onClose?: () => void;
+  projectId?: string;
 };
 
-export default function EstimatorApp({ initialState, onSave, onClose }: EstimatorAppProps) {
+export default function EstimatorApp({ initialState, onSave, onClose, projectId }: EstimatorAppProps) {
   const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
   const [yaml, setYaml] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [isPublic, setIsPublic] = useState(false);
   const [state, setState] = useState<AppState>(
     initialState ?? {
       project: {
@@ -73,6 +76,26 @@ export default function EstimatorApp({ initialState, onSave, onClose }: Estimato
     const isDirty = JSON.stringify(state) !== JSON.stringify(initialRef.current);
     dirtyRef.current = isDirty;
   }, [state]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    const checkPublicStatus = async () => {
+      try {
+        const { supabase } = await import("@/lib/supabaseClient");
+        const { data } = await supabase
+          .from("projects")
+          .select("is_public")
+          .eq("id", projectId)
+          .single();
+        if (data) {
+          setIsPublic(data.is_public ?? false);
+        }
+      } catch (e) {
+        console.error("Failed to check public status:", e);
+      }
+    };
+    checkPublicStatus();
+  }, [projectId]);
 
   const canNext = state.project.name.trim().length > 0;
 
@@ -191,7 +214,6 @@ export default function EstimatorApp({ initialState, onSave, onClose }: Estimato
       // Сбрасываем индикатор несохранённых изменений на текущий снимок
       initialRef.current = state;
       dirtyRef.current = false;
-      alert("Проект сохранён");
     } catch (e: any) {
       alert(e?.message || "Не удалось сохранить проект");
     } finally {
@@ -206,6 +228,81 @@ export default function EstimatorApp({ initialState, onSave, onClose }: Estimato
       if (!ok) return;
     }
     onClose();
+  };
+
+  const handleShare = async () => {
+    if (!projectId) {
+      alert("Сначала сохраните проект");
+      return;
+    }
+    
+    const fullUrl = `${window.location.origin}/project/${projectId}/preview`;
+    
+    if (isPublic) {
+      await navigator.clipboard.writeText(fullUrl);
+      alert("Ссылка скопирована в буфер обмена!");
+      return;
+    }
+    
+    setSharing(true);
+    try {
+      const { supabase } = await import("@/lib/supabaseClient");
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        throw new Error("Сессия истекла, перезайдите");
+      }
+
+      const res = await fetch("/api/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, accessToken: session.access_token }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Не удалось создать ссылку");
+      }
+      setIsPublic(true);
+      await navigator.clipboard.writeText(fullUrl);
+      alert("Ссылка скопирована в буфер обмена!");
+    } catch (e: any) {
+      alert(e?.message || "Не удалось создать ссылку");
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const handleUnshare = async () => {
+    if (!projectId) return;
+    
+    const ok = window.confirm("Отключить публичный доступ к проекту?");
+    if (!ok) return;
+    
+    setSharing(true);
+    try {
+      const { supabase } = await import("@/lib/supabaseClient");
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        throw new Error("Сессия истекла, перезайдите");
+      }
+
+      const res = await fetch("/api/unshare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, accessToken: session.access_token }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Не удалось отключить доступ");
+      }
+      setIsPublic(false);
+      alert("Публичный доступ отключён");
+    } catch (e: any) {
+      alert(e?.message || "Не удалось отключить доступ");
+    } finally {
+      setSharing(false);
+    }
   };
 
   const currentPresets = presetsByType(state.project.type);
@@ -448,6 +545,16 @@ export default function EstimatorApp({ initialState, onSave, onClose }: Estimato
                 }
                 return <span className="small" style={{color:'#16a34a', border:'1px solid #e2e8f0', borderRadius:8, padding:'2px 6px'}}>✓ Сохранено</span>;
               })()}
+              {isPublic && projectId && (
+                <button 
+                  className="small" 
+                  style={{color:'#3b82f6', border:'1px solid #e2e8f0', borderRadius:8, padding:'2px 6px', background:'transparent', cursor:'pointer'}}
+                  onClick={handleUnshare}
+                  title="Нажмите, чтобы отключить публичный доступ"
+                >
+                  🔗 Публичный
+                </button>
+              )}
               {(() => {
                 const sums = state.epics.reduce((acc, e) => {
                   e.tasks.forEach((t) => {
@@ -498,6 +605,11 @@ export default function EstimatorApp({ initialState, onSave, onClose }: Estimato
           <div style={{display:"flex", justifyContent:"space-between", marginTop: 8, gap: 8}}>
             <button className="btn" type="button" onClick={() => setStep(1)}>Назад</button>
             <div style={{display:"flex", gap:8}}>
+              {projectId && (
+                <button className="btn" type="button" onClick={handleShare} disabled={sharing}>
+                  {sharing ? "Создание ссылки..." : isPublic ? "Скопировать ссылку" : "Поделиться"}
+                </button>
+              )}
               {onSave && (
                 <button className="btn" type="button" onClick={handleSave} disabled={saving}>
                   {saving ? "Сохранение..." : "Сохранить проект"}
