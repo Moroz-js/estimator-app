@@ -1,450 +1,198 @@
 "use client";
-import EpicEditor from "@/components/EpicEditor";
-import StackMultiSelect from "@/components/StackMultiSelect";
-import YAMLPreview from "@/components/YAMLPreview";
-import { AppState, Epic, SubtaskType } from "@/lib/types";
-import { generateYaml } from "@/lib/yaml";
-import jsyaml from "js-yaml";
-import { ChangeEvent, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+type ProjectListItem = {
+  id: string;
+  name: string;
+  created_at: string | null;
+};
 
-function uid(prefix: string) {
-  return `${prefix}_${Math.random().toString(36).slice(2, 8)}`;
-}
+const supabaseRestUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1`;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-const WEB_PRESETS = ["Weweb", "Webflow", "Supabase", "Figma"] as const;
-const MOBILE_PRESETS = ["Flutterflow", "Firebase", "Supabase"] as const;
-const isDb = (x: string) => x === "Firebase" || x === "Supabase";
-function presetsByType(type: "Web" | "Mobile"): string[] {
-  return type === "Web" ? [...WEB_PRESETS] : [...MOBILE_PRESETS];
-}
+export default function HomePage() {
+  const router = useRouter();
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [projects, setProjects] = useState<ProjectListItem[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
 
-type TaskField = "type" | "title" | "estimate";
-type ValidationMap = Record<string, { epicTitle?: boolean; noTasks?: boolean; tasks?: Record<string, Partial<Record<TaskField, boolean>>> }>;
+  useEffect(() => {
+    let active = true;
 
-export default function Page() {
-  const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
-  const [yaml, setYaml] = useState("");
-  const [downloading, setDownloading] = useState(false);
-  const [state, setState] = useState<AppState>({
-    project: {
-      name: "",
-      date: today(),
-      type: "Web",
-      stack: [],
-    },
-    epics: [],
-  });
-  const lastDefaultsSig = useRef<string | null>(null);
-  const [errors, setErrors] = useState<ValidationMap | null>(null);
+    const initFromStorage = async () => {
+      if (typeof window === "undefined") return;
+      const storedId = localStorage.getItem("estimator_user_id");
+      const storedEmail = localStorage.getItem("estimator_user_email");
+      if (!active) return;
 
-  const canNext = state.project.name.trim().length > 0;
+      if (storedId && storedEmail) {
+        setUserId(storedId);
+        setUserEmail(storedEmail);
+        await loadProjects(storedId);
+      } else {
+        setUserId(null);
+        setUserEmail(null);
+      }
+    };
 
-  const updateProject = <K extends keyof AppState["project"]>(key: K, val: AppState["project"][K]) => {
-    setState((s: AppState) => ({ ...s, project: { ...s.project, [key]: val } }));
-  };
+    initFromStorage();
 
-  const applyFrontendToExistingEpics = (frontend: "Weweb" | "Webflow") => {
-    setState((s) => {
-      if (s.epics.length === 0) return s as AppState;
-      const updated = s.epics.map((e) => {
-        if (e.title !== "Initialization") return e;
-        return {
-          ...e,
-          tasks: e.tasks.map((t) =>
-            /^UI kit & components in\s+/i.test(t.title)
-              ? { ...t, title: `UI kit & components in ${frontend}` }
-              : t
-          ),
-        };
-      });
-      return { ...s, epics: updated } as AppState;
-    });
-  };
-
-  const applyBackendToExistingEpics = (backend: "Firebase" | "Supabase") => {
-    setState((s) => {
-      if (s.epics.length === 0) return s;
-      const updated = s.epics.map((e) => {
-        if (e.title !== "Initialization") return e;
-        return {
-          ...e,
-          tasks: e.tasks.map((t) =>
-            t.title === "Firebase setup" || t.title === "Supabase setup"
-              ? { ...t, title: `${backend} setup` }
-              : t
-          ),
-        };
-      });
-      return { ...s, epics: updated } as AppState;
-    });
-    const isMobile = state.project.type === "Mobile";
-    lastDefaultsSig.current = `${isMobile ? 'mobile' : 'web'}|${backend}`;
-  };
-
-  const updateEpics = (epics: Epic[]) => setState((s: AppState) => ({ ...s, epics }));
-
-  const validate = (epics: Epic[]): ValidationMap => {
-    const out: ValidationMap = {};
-    epics.forEach((e) => {
-      let epicHas = false;
-      const taskMap: Record<string, Partial<Record<TaskField, boolean>>> = {};
-      const titleInvalid = (e.title || "").trim().length === 0;
-      if (titleInvalid) { epicHas = true; }
-      const noTasks = e.tasks.length === 0;
-      if (noTasks) { epicHas = true; }
-      e.tasks.forEach((t) => {
-        const tErr: Partial<Record<TaskField, boolean>> = {};
-        if ((t.type as any) === "") tErr.type = true;
-        if ((t.title || "").trim().length === 0) tErr.title = true;
-        if (t.estimate === undefined || t.estimate === null || Number.isNaN(t.estimate)) tErr.estimate = true;
-        if (Object.keys(tErr).length) {
-          taskMap[t.id] = tErr;
-          epicHas = true;
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
+      if (session) {
+        const nextId = session.user?.id ?? null;
+        const nextEmail = session.user?.email ?? null;
+        if (typeof window !== "undefined") {
+          if (nextId) localStorage.setItem("estimator_user_id", nextId);
+          if (nextEmail) localStorage.setItem("estimator_user_email", nextEmail);
         }
-      });
-      if (epicHas) out[e.id] = { epicTitle: titleInvalid, noTasks, tasks: taskMap };
+        if (nextId) {
+          setUserId(nextId);
+          setUserEmail(nextEmail ?? null);
+          loadProjects(nextId);
+        }
+      } else {
+        setUserId(null);
+        setUserEmail(null);
+        setProjects([]);
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("estimator_user_id");
+          localStorage.removeItem("estimator_user_email");
+        }
+      }
     });
-    return out;
-  };
 
-  const onGenerate = async () => {
-    const v = validate(state.epics);
-    const hasErrors = Object.keys(v).length > 0;
-    if (hasErrors) {
-      setErrors(v);
-      return;
-    }
-    setErrors(null);
+    return () => {
+      active = false;
+      sub.subscription.unsubscribe();
+    };
+  }, [router]);
+
+  const loadProjects = async (ownerId: string | null) => {
+    setProjectsLoading(true);
     try {
-      setDownloading(true);
-      const body = generateYaml(state); // already JSON string
-      const res = await fetch("/estimate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "bypass-tunnel-reminder": "true" },
-        body,
-      });
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || `HTTP ${res.status}`);
+      if (!ownerId) {
+        setProjects([]);
+      } else {
+        const url = `${supabaseRestUrl}/projects?select=id,name,created_at&owner_id=eq.${ownerId}`;
+        const res = await fetch(url, {
+          headers: {
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${supabaseAnonKey}`,
+          },
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as ProjectListItem[];
+        setProjects(data ?? []);
       }
-      const cd = res.headers.get("content-disposition") || "";
-      const m = cd.match(/filename="?([^";]+)"?/i);
-      const filename = m ? decodeURIComponent(m[1]) : "Estimate.xlsx";
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (e:any) {
-      alert(`Не удалось получить XLSX: ${e?.message || e}`);
+    } catch (e: any) {
+      console.error(e);
     } finally {
-      setDownloading(false);
+      setProjectsLoading(false);
     }
   };
 
-  const currentPresets = presetsByType(state.project.type);
-  const setTypeAndFilterStack = (type: "Web" | "Mobile") => {
-    setState((s) => {
-      const customs = s.project.stack.filter((x) => x.startsWith("Custom:"));
-      const filteredPresets = s.project.stack.filter((x) => currentPresets.includes(x));
-      const nextPresets = presetsByType(type);
-      const preserved = [...customs, ...filteredPresets.filter((x) => nextPresets.includes(x))];
-      return { ...s, project: { ...s.project, type, stack: preserved } } as AppState;
-    });
-  };
+  if (!userEmail) {
+    return (
+      <div className="viewport">
+        <div className="card" style={{ maxWidth: 420, width: "100%" }}>
+          <div className="card-header">
+            <h2>Требуется вход</h2>
+          </div>
+          <div className="grid">
+            <div className="small" style={{ color: "#64748b" }}>
+              Сессия не найдена. Перейдите на страницу входа.
+            </div>
+            <button className="btn primary" type="button" onClick={() => router.replace("/login")}>Перейти на /login</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  type TemplateTask = { type: SubtaskType; title: string; estimate?: number };
-  type TemplateEpic = { title: string; tasks: TemplateTask[] };
-  type DefaultsYaml = {
-    mobile?: TemplateEpic[]; // legacy
-    web?: TemplateEpic[];    // legacy
-    integrations?: TemplateEpic[];
-    webflow?: TemplateEpic[];
-    weweb?: TemplateEpic[];
-    flutterflow?: TemplateEpic[];
-  };
-
-  const buildDefaultEpics = async (): Promise<Epic[]> => {
-    const res = await fetch("/defaults.yaml", { cache: "no-store" });
-    const text = await res.text();
-    const parsed = jsyaml.load(text) as DefaultsYaml;
-
-    const isMobile = state.project.type === "Mobile";
-    const wantsWebflow = state.project.stack.includes("Webflow");
-    const wantsWeweb = state.project.stack.includes("Weweb");
-    const setKey = isMobile
-      ? (parsed.flutterflow ? "flutterflow" : "mobile")
-      : (wantsWebflow && (parsed as any).webflow ? "webflow" : (parsed as any).weweb ? "weweb" : "web");
-    const backend = state.project.stack.includes("Firebase")
-      ? "Firebase"
-      : state.project.stack.includes("Supabase")
-      ? "Supabase"
-      : "Supabase";
-
-    const baseList: TemplateEpic[] = [...((parsed as any)[setKey] || [])];
-    const integrations: TemplateEpic[] = parsed.integrations || [];
-    // For mobile/flutterflow place Integrations before Publishing/Deploy epic
-    if (setKey === "mobile" || setKey === "flutterflow") {
-      const pubIdx = baseList.findIndex((e) =>
-        e.title === "AppStore & GooglePlay publishing" || e.title === "AppStore & GooglePlay deploy"
-      );
-      const before = pubIdx >= 0 ? baseList.slice(0, pubIdx) : baseList;
-      const after = pubIdx >= 0 ? baseList.slice(pubIdx) : [];
-      var merged: TemplateEpic[] = [...before, ...integrations, ...after];
-    } else {
-      var merged: TemplateEpic[] = [...baseList, ...integrations];
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setUserId(null);
+    setUserEmail(null);
+    setProjects([]);
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("estimator_user_id");
+      localStorage.removeItem("estimator_user_email");
     }
-    let epics: Epic[] = merged.map((e) => ({
-      id: uid("epic"),
-      title: e.title,
-      tasks: e.tasks.map((t) => ({
-        id: uid("t"),
-        type: t.type,
-        title: t.title.replace("{{BACKEND}}", backend),
-        estimate: t.estimate,
-        comment: "",
-      })),
-    }));
-    // With new explicit defaults, no extra post-processing required
-
-    return epics;
-  };
-
-  const proceedToEpics = async () => {
-    const isMobile = state.project.type === "Mobile";
-    const backend = state.project.stack.includes("Firebase")
-      ? "Firebase"
-      : state.project.stack.includes("Supabase")
-      ? "Supabase"
-      : "Supabase";
-    const sig = `${isMobile ? "mobile" : "web"}|${backend}`;
-
-    if (state.epics.length === 0) {
-      const defaults = await buildDefaultEpics();
-      setState((s) => ({ ...s, epics: defaults }));
-      lastDefaultsSig.current = sig;
-      setStep(2);
-      return;
-    }
-
-    if (lastDefaultsSig.current && lastDefaultsSig.current !== sig) {
-      const ok = window.confirm("Изменился тип проекта или БД. Пересоздать эпики по текущему шаблону? Ваши правки будут перезаписаны.");
-      if (ok) {
-        const defaults = await buildDefaultEpics();
-        setState((s) => ({ ...s, epics: defaults }));
-        lastDefaultsSig.current = sig;
-      }
-    }
-    setStep(2);
+    router.replace("/login");
   };
 
   return (
     <div className="viewport">
-      {step === 0 && (
-        <div className="card animate-in" style={{width:"100%"}}>
-          <div className="card-header">
-            <h2>Здравствуйте</h2>
-            <div className="small">Шаг 1 из 3</div>
+      <div className="card" style={{ width: "100%" }}>
+        <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <h2>Мои проекты</h2>
+            <div className="small">Вы вошли как {userEmail}</div>
           </div>
-          <div className="grid">
-            <div>
-              <label>Название проекта *</label>
-              <input
-                placeholder="Название проекта"
-                value={state.project.name}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => updateProject("name", e.target.value)}
-              />
-            </div>
-            <div>
-              <label>Дата</label>
-              <input
-                type="date"
-                value={state.project.date}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => updateProject("date", e.target.value)}
-              />
-            </div>
-            <div style={{textAlign:"right", marginTop: 4}}>
-              <button className="btn primary" type="button" disabled={!canNext} onClick={() => setStep(1)}>
-                Далее
-              </button>
-            </div>
-          </div>
+          <button className="btn" type="button" onClick={handleSignOut}>
+            Выйти
+          </button>
         </div>
-      )}
-
-      {step === 1 && (
-        <div className="card animate-in">
-          <div className="card-header">
-            <h2>Тип проекта и стек</h2>
-            <div className="small">Шаг 2 из 3</div>
-          </div>
-          <div className="grid">
-            <div>
-              <label>Тип проекта</label>
-              <div style={{display:"flex", gap:8}}>
-                <button
-                  type="button"
-                  className={`btn ${state.project.type === "Web" ? "primary" : ""}`}
-                  onClick={() => setTypeAndFilterStack("Web")}
-                >
-                  Web
-                </button>
-                <button
-                  type="button"
-                  className={`btn ${state.project.type === "Mobile" ? "primary" : ""}`}
-                  onClick={() => setTypeAndFilterStack("Mobile")}
-                >
-                  Mobile
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <label>Стек (мультивыбор)</label>
-              <StackMultiSelect
-                value={state.project.stack}
-                onChange={(v) => {
-                  setState((s) => {
-                    const prev = s.project.stack;
-                    const added = v.find((x) => !prev.includes(x));
-                    let next = v;
-                    const hasFirebase = v.includes("Firebase");
-                    const hasSupabase = v.includes("Supabase");
-                    if (added && (added === "Firebase" || added === "Supabase") && hasFirebase && hasSupabase) {
-                      next = v.filter((x) => x === added || !isDb(x));
-                    }
-                    return { ...s, project: { ...s.project, stack: next } } as AppState;
-                  });
-                  const backend = v.includes("Firebase") ? "Firebase" : v.includes("Supabase") ? "Supabase" : null;
-                  if (backend) applyBackendToExistingEpics(backend);
-                  const frontend = v.includes("Weweb") ? "Weweb" : v.includes("Webflow") ? "Webflow" : null;
-                  if (frontend) applyFrontendToExistingEpics(frontend);
-                }}
-                presets={currentPresets}
-              />
-              {(() => {
-                const selected = state.project.stack;
-                const dbCount = (selected.includes("Firebase") ? 1 : 0) + (selected.includes("Supabase") ? 1 : 0);
-                const hasOther = selected.some((x) => !isDb(x));
-                const hasWebflow = selected.includes("Webflow");
-                const valid = hasWebflow ? hasOther : (dbCount === 1 && hasOther);
-                if (valid) return null;
-                return (
-                  <div className="small" style={{marginTop:6, color:'#ef4444'}}>
-                    {hasWebflow
-                      ? "Выберите хотя бы один инструмент (Webflow допустим без БД)."
-                      : "Требуется выбрать ровно одну БД (Firebase или Supabase) и как минимум один дополнительный инструмент."}
-                  </div>
-                );
-              })()}
-            </div>
-
-            <div style={{display:"flex", justifyContent:"space-between", marginTop: 4}}>
-              <button className="btn" type="button" onClick={() => setStep(0)}>Назад</button>
-              <button
-                className="btn primary"
-                type="button"
-                onClick={proceedToEpics}
-                disabled={(() => {
-                  const selected = state.project.stack;
-                  const dbCount = (selected.includes("Firebase") ? 1 : 0) + (selected.includes("Supabase") ? 1 : 0);
-                  const hasOther = selected.some((x) => !isDb(x));
-                  const hasWebflow = selected.includes("Webflow");
-                  const valid = hasWebflow ? hasOther : (dbCount === 1 && hasOther);
-                  return !valid;
-                })()}
-              >
-                Далее
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {step === 2 && (
-        <>
-        <div className="card animate-in" style={{width:"100%", maxWidth:"1280px"}}>
-          <div className="card-header">
-            <h2>Эпики и подзадачи</h2>
-            <div style={{display:'flex', alignItems:'center', gap:8}}>
-              <div className="small">Шаг 3 из 3</div>
-              {(() => {
-                const sums = state.epics.reduce((acc, e) => {
-                  e.tasks.forEach((t) => {
-                    const v = typeof t.estimate === 'number' && !Number.isNaN(t.estimate) ? t.estimate : 0;
-                    if (!v) return;
-                    if (t.type === 'BA') acc.BA += v;
-                    else if (t.type === 'NC') acc.NC += v;
-                    else if (t.type === 'DE') acc.DE += v;
-                    acc.ALL += v;
-                  });
-                  return acc;
-                }, {BA:0, NC:0, DE:0, ALL:0});
-                const chip = (label:string, val:number) => (
-                  <span className="small" style={{color:'#475569', border:'1px solid #e2e8f0', borderRadius:8, padding:'2px 6px'}}>{label}: {val} ч</span>
-                );
-                return (
-                  <div style={{display:'flex', gap:6, alignItems:'center'}}>
-                    {chip('BA', sums.BA)}
-                    {chip('NC', sums.NC)}
-                    {chip('DE', sums.DE)}
-                    {chip('Всего', sums.ALL)}
-                  </div>
-                );
-              })()}
-              <button
-                className="btn"
-                type="button"
-                onClick={async () => {
-                  const ok = window.confirm("Пересоздать эпики по текущему шаблону? Ваши правки будут перезаписаны.");
-                  if (!ok) return;
-                  const defaults = await buildDefaultEpics();
-                  setState((s) => ({ ...s, epics: defaults }));
-                  const isMobile = state.project.type === "Mobile";
-                  const backend = state.project.stack.includes("Firebase") ? "Firebase" : "Supabase";
-                  lastDefaultsSig.current = `${isMobile ? 'mobile' : 'web'}|${backend}`;
-                }}
-              >
-                Перегенерировать по шаблону
-              </button>
-            </div>
-          </div>
-          {errors && Object.keys(errors).length > 0 && (
-            <div className="small" style={{color:'#ef4444', marginBottom:8}}>
-              Обнаружены ошибки в эпиках: {Object.keys(errors).length}. Проверьте подсветку слева и поля задач.
-            </div>
-          )}
-          <EpicEditor value={state.epics} onChange={updateEpics} errors={errors ?? undefined} />
-          <div style={{display:"flex", justifyContent:"space-between", marginTop: 8}}>
-            <button className="btn" type="button" onClick={() => setStep(1)}>Назад</button>
-            <button className="btn primary" type="button" onClick={onGenerate} disabled={downloading}>
-              {downloading ? "Генерация..." : "Скачать XLSX"}
+        <div className="grid">
+          <div>
+            <button
+              className="btn primary"
+              type="button"
+              onClick={() => router.push("/project/new")}
+            >
+              Создать новый проект
             </button>
           </div>
-        </div>
-        
-        </>
-      )}
-
-      {step === 3 && (
-        <div className="card animate-in" style={{width:"100%"}}>
-          <div className="card-header">
-            <h2>JSON</h2>
+          <div>
+            {projectsLoading ? (
+              <div className="small" style={{ color: "#64748b" }}>
+                Загрузка проектов...
+              </div>
+            ) : projects.length === 0 ? (
+              <div className="small" style={{ color: "#64748b" }}>
+                У вас пока нет проектов. Создайте первый.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+                {projects.map((p) => {
+                  const dateLabel = p.created_at
+                    ? new Date(p.created_at).toLocaleDateString("ru-RU")
+                    : "";
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="card"
+                      style={{
+                        textAlign: "left",
+                        padding: 12,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 4,
+                      }}
+                      onClick={() => router.push(`/project/${p.id}`)}
+                    >
+                      <div style={{ fontWeight: 600 }}>{p.name || "Без названия"}</div>
+                      {dateLabel && (
+                        <div className="small" style={{ color: "#64748b" }}>
+                          Создан {dateLabel}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
-          <YAMLPreview value={yaml} />
-          <div style={{marginTop:8}}>
-            <button className="btn" type="button" onClick={() => setStep(2)}>Назад к эпикам</button>
-          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
