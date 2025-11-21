@@ -55,6 +55,7 @@ textarea { min-height: 240px; font-family: ui-monospace, SFMono-Regular, Menlo, 
 
 /* Simple animations */
 @keyframes fadeUp { from { opacity: 0; transform: translateY(8px);} to { opacity: 1; transform: translateY(0);} }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .animate-in { animation: fadeUp .25s ease both; }
 
 /* Drag handle */

@@ -7,6 +7,7 @@ type ProjectListItem = {
   id: string;
   name: string;
   created_at: string | null;
+  invited_by_email?: string | null;
 };
 
 const supabaseRestUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1`;
@@ -17,6 +18,7 @@ export default function HomePage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
+  const [guestProjects, setGuestProjects] = useState<ProjectListItem[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
 
   useEffect(() => {
@@ -76,20 +78,63 @@ export default function HomePage() {
     try {
       if (!ownerId) {
         setProjects([]);
+        setGuestProjects([]);
       } else {
-        const url = `${supabaseRestUrl}/projects?select=id,name,created_at&owner_id=eq.${ownerId}`;
-        const res = await fetch(url, {
+        // Загружаем свои проекты
+        const ownUrl = `${supabaseRestUrl}/projects?select=id,name,created_at&owner_id=eq.${ownerId}`;
+        const ownRes = await fetch(ownUrl, {
           headers: {
             apikey: supabaseAnonKey,
             Authorization: `Bearer ${supabaseAnonKey}`,
           },
         });
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || `HTTP ${res.status}`);
+        if (!ownRes.ok) {
+          const text = await ownRes.text();
+          throw new Error(text || `HTTP ${ownRes.status}`);
         }
-        const data = (await res.json()) as ProjectListItem[];
-        setProjects(data ?? []);
+        const ownData = (await ownRes.json()) as ProjectListItem[];
+        setProjects(ownData ?? []);
+
+        // Загружаем гостевые проекты через project_members
+        const { data: memberData, error: memberError } = await supabase
+          .from("project_members")
+          .select(`
+            project_id,
+            invited_by,
+            projects!inner(id, name, created_at, owner_id)
+          `)
+          .eq("user_id", ownerId)
+          .neq("role", "owner");
+
+        if (memberError) {
+          console.error("Failed to load guest projects:", memberError);
+          setGuestProjects([]);
+          return;
+        }
+
+        // Получаем email приглашающих
+        const inviterIds = memberData
+          ?.map((m: any) => m.invited_by)
+          .filter((id: any) => id) ?? [];
+        
+        const inviterEmails: Record<string, string> = {};
+        if (inviterIds.length > 0) {
+          const { data: userData } = await supabase.auth.admin.listUsers();
+          userData?.users.forEach(u => {
+            if (inviterIds.includes(u.id)) {
+              inviterEmails[u.id] = u.email || "Неизвестный";
+            }
+          });
+        }
+
+        const guestData: ProjectListItem[] = memberData?.map((m: any) => ({
+          id: m.projects.id,
+          name: m.projects.name,
+          created_at: m.projects.created_at,
+          invited_by_email: m.invited_by ? inviterEmails[m.invited_by] : null,
+        })) ?? [];
+
+        setGuestProjects(guestData);
       }
     } catch (e: any) {
       console.error(e);
@@ -121,6 +166,7 @@ export default function HomePage() {
     setUserId(null);
     setUserEmail(null);
     setProjects([]);
+    setGuestProjects([]);
     if (typeof window !== "undefined") {
       localStorage.removeItem("estimator_user_id");
       localStorage.removeItem("estimator_user_email");
@@ -191,6 +237,48 @@ export default function HomePage() {
               </div>
             )}
           </div>
+
+          {guestProjects.length > 0 && (
+            <div style={{ marginTop: 24 }}>
+              <h3 style={{ marginBottom: 12 }}>Гостевые проекты</h3>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+                {guestProjects.map((p) => {
+                  const dateLabel = p.created_at
+                    ? new Date(p.created_at).toLocaleDateString("ru-RU")
+                    : "";
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="card"
+                      style={{
+                        textAlign: "left",
+                        padding: 12,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 4,
+                        border: "1px solid #e0e7ff",
+                        background: "#f5f7ff",
+                      }}
+                      onClick={() => router.push(`/project/${p.id}`)}
+                    >
+                      <div style={{ fontWeight: 600 }}>{p.name || "Без названия"}</div>
+                      {p.invited_by_email && (
+                        <div className="small" style={{ color: "#6366f1" }}>
+                          👤 Пригласил: {p.invited_by_email}
+                        </div>
+                      )}
+                      {dateLabel && (
+                        <div className="small" style={{ color: "#64748b" }}>
+                          Создан {dateLabel}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

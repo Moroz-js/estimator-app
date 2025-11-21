@@ -2,6 +2,7 @@
 import EpicEditor from "@/components/EpicEditor";
 import StackMultiSelect from "@/components/StackMultiSelect";
 import YAMLPreview from "@/components/YAMLPreview";
+import InviteModal from "@/components/InviteModal";
 import { AppState, Epic, SubtaskType } from "@/lib/types";
 import { generateYaml } from "@/lib/yaml";
 import jsyaml from "js-yaml";
@@ -37,8 +38,8 @@ export default function EstimatorApp({ initialState, onSave, onClose, projectId 
   const [yaml, setYaml] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [sharing, setSharing] = useState(false);
-  const [isPublic, setIsPublic] = useState(false);
+  const [inviting, setInviting] = useState(false);
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [state, setState] = useState<AppState>(
     initialState ?? {
       project: {
@@ -76,26 +77,6 @@ export default function EstimatorApp({ initialState, onSave, onClose, projectId 
     const isDirty = JSON.stringify(state) !== JSON.stringify(initialRef.current);
     dirtyRef.current = isDirty;
   }, [state]);
-
-  useEffect(() => {
-    if (!projectId) return;
-    const checkPublicStatus = async () => {
-      try {
-        const { supabase } = await import("@/lib/supabaseClient");
-        const { data } = await supabase
-          .from("projects")
-          .select("is_public")
-          .eq("id", projectId)
-          .single();
-        if (data) {
-          setIsPublic(data.is_public ?? false);
-        }
-      } catch (e) {
-        console.error("Failed to check public status:", e);
-      }
-    };
-    checkPublicStatus();
-  }, [projectId]);
 
   const canNext = state.project.name.trim().length > 0;
 
@@ -230,55 +211,16 @@ export default function EstimatorApp({ initialState, onSave, onClose, projectId 
     onClose();
   };
 
-  const handleShare = async () => {
+  const handleInviteClick = () => {
     if (!projectId) {
       alert("Сначала сохраните проект");
       return;
     }
-    
-    const fullUrl = `${window.location.origin}/project/${projectId}/preview`;
-    
-    if (isPublic) {
-      await navigator.clipboard.writeText(fullUrl);
-      alert("Ссылка скопирована в буфер обмена!");
-      return;
-    }
-    
-    setSharing(true);
-    try {
-      const { supabase } = await import("@/lib/supabaseClient");
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session?.access_token) {
-        throw new Error("Сессия истекла, перезайдите");
-      }
-
-      const res = await fetch("/api/share", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, accessToken: session.access_token }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Не удалось создать ссылку");
-      }
-      setIsPublic(true);
-      await navigator.clipboard.writeText(fullUrl);
-      alert("Ссылка скопирована в буфер обмена!");
-    } catch (e: any) {
-      alert(e?.message || "Не удалось создать ссылку");
-    } finally {
-      setSharing(false);
-    }
+    setInviteModalOpen(true);
   };
 
-  const handleUnshare = async () => {
-    if (!projectId) return;
-    
-    const ok = window.confirm("Отключить публичный доступ к проекту?");
-    if (!ok) return;
-    
-    setSharing(true);
+  const handleInviteSubmit = async (email: string) => {
+    setInviting(true);
     try {
       const { supabase } = await import("@/lib/supabaseClient");
       const { data: { session } } = await supabase.auth.getSession();
@@ -287,21 +229,28 @@ export default function EstimatorApp({ initialState, onSave, onClose, projectId 
         throw new Error("Сессия истекла, перезайдите");
       }
 
-      const res = await fetch("/api/unshare", {
+      const res = await fetch("/api/invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, accessToken: session.access_token }),
+        body: JSON.stringify({ 
+          projectId, 
+          email,
+          accessToken: session.access_token 
+        }),
       });
+      
+      const data = await res.json();
+      
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Не удалось отключить доступ");
+        throw new Error(data.error || "Не удалось пригласить пользователя");
       }
-      setIsPublic(false);
-      alert("Публичный доступ отключён");
+      
+      alert("Пользователь успешно приглашён!");
     } catch (e: any) {
-      alert(e?.message || "Не удалось отключить доступ");
+      alert(e?.message || "Не удалось пригласить пользователя");
+      throw e;
     } finally {
-      setSharing(false);
+      setInviting(false);
     }
   };
 
@@ -545,16 +494,6 @@ export default function EstimatorApp({ initialState, onSave, onClose, projectId 
                 }
                 return <span className="small" style={{color:'#16a34a', border:'1px solid #e2e8f0', borderRadius:8, padding:'2px 6px'}}>✓ Сохранено</span>;
               })()}
-              {isPublic && projectId && (
-                <button 
-                  className="small" 
-                  style={{color:'#3b82f6', border:'1px solid #e2e8f0', borderRadius:8, padding:'2px 6px', background:'transparent', cursor:'pointer'}}
-                  onClick={handleUnshare}
-                  title="Нажмите, чтобы отключить публичный доступ"
-                >
-                  🔗 Публичный
-                </button>
-              )}
               {(() => {
                 const sums = state.epics.reduce((acc, e) => {
                   e.tasks.forEach((t) => {
@@ -606,8 +545,8 @@ export default function EstimatorApp({ initialState, onSave, onClose, projectId 
             <button className="btn" type="button" onClick={() => setStep(1)}>Назад</button>
             <div style={{display:"flex", gap:8}}>
               {projectId && (
-                <button className="btn" type="button" onClick={handleShare} disabled={sharing}>
-                  {sharing ? "Создание ссылки..." : isPublic ? "Скопировать ссылку" : "Поделиться"}
+                <button className="btn" type="button" onClick={handleInviteClick} disabled={inviting}>
+                  Пригласить
                 </button>
               )}
               {onSave && (
@@ -635,6 +574,12 @@ export default function EstimatorApp({ initialState, onSave, onClose, projectId 
           </div>
         </div>
       )}
+
+      <InviteModal
+        isOpen={inviteModalOpen}
+        onClose={() => setInviteModalOpen(false)}
+        onInvite={handleInviteSubmit}
+      />
     </div>
   );
 }
