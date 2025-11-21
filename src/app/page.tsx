@@ -100,7 +100,7 @@ export default function HomePage() {
           .from("project_members")
           .select(`
             project_id,
-            invited_by,
+            invited_by_email,
             projects!inner(id, name, created_at, owner_id)
           `)
           .eq("user_id", ownerId)
@@ -112,26 +112,11 @@ export default function HomePage() {
           return;
         }
 
-        // Получаем email приглашающих
-        const inviterIds = memberData
-          ?.map((m: any) => m.invited_by)
-          .filter((id: any) => id) ?? [];
-        
-        const inviterEmails: Record<string, string> = {};
-        if (inviterIds.length > 0) {
-          const { data: userData } = await supabase.auth.admin.listUsers();
-          userData?.users.forEach(u => {
-            if (inviterIds.includes(u.id)) {
-              inviterEmails[u.id] = u.email || "Неизвестный";
-            }
-          });
-        }
-
         const guestData: ProjectListItem[] = memberData?.map((m: any) => ({
           id: m.projects.id,
           name: m.projects.name,
           created_at: m.projects.created_at,
-          invited_by_email: m.invited_by ? inviterEmails[m.invited_by] : null,
+          invited_by_email: m.invited_by_email || "Неизвестный",
         })) ?? [];
 
         setGuestProjects(guestData);

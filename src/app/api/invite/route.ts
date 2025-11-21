@@ -44,27 +44,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Only owner can invite users" }, { status: 403 });
     }
 
-    // Ищем пользователя по email
-    // Примечание: для этого нужен service role key или RPC функция
-    // Пока используем простой подход - пользователь должен быть зарегистрирован
+    // Ищем пользователя по email через RPC функцию
+    const { data: invitedUserId, error: rpcError } = await supabase
+      .rpc("find_user_id_by_email", { user_email: email });
     
-    // Создаём admin клиент для поиска пользователя
-    const adminSupabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-
-    // Получаем всех пользователей и ищем по email
-    // Это временное решение, в продакшене нужна RPC функция
-    const { data: users, error: usersError } = await adminSupabase.auth.admin.listUsers();
-    
-    if (usersError) {
-      return NextResponse.json({ error: "Failed to search user" }, { status: 500 });
+    if (rpcError) {
+      console.error("RPC error:", rpcError);
+      return NextResponse.json({ error: "Ошибка поиска пользователя" }, { status: 500 });
     }
 
-    const invitedUser = users.users.find(u => u.email === email);
-    
-    if (!invitedUser) {
+    if (!invitedUserId) {
       return NextResponse.json({ error: "Пользователь с таким email не найден" }, { status: 404 });
     }
 
@@ -73,7 +62,7 @@ export async function POST(req: NextRequest) {
       .from("project_members")
       .select("id")
       .eq("project_id", projectId)
-      .eq("user_id", invitedUser.id)
+      .eq("user_id", invitedUserId)
       .single();
 
     if (existingMember) {
@@ -85,9 +74,10 @@ export async function POST(req: NextRequest) {
       .from("project_members")
       .insert({
         project_id: projectId,
-        user_id: invitedUser.id,
+        user_id: invitedUserId,
         role: "viewer",
         invited_by: user.id,
+        invited_by_email: user.email,
       });
 
     if (insertError) {
