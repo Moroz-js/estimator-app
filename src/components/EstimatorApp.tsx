@@ -6,6 +6,8 @@ import InviteModal from "@/components/InviteModal";
 import ProjectMembers from "@/components/ProjectMembers";
 import { UserAvatarGroup } from "@/components/UserAvatar";
 import { useProjectCollab } from "@/components/ProjectCollabProvider";
+import ConfirmModal from "@/components/ConfirmModal";
+import AlertModal from "@/components/AlertModal";
 import { AppState, Epic, SubtaskType, ProjectLanguage } from "@/lib/types";
 import { generateYaml } from "@/lib/yaml";
 import jsyaml from "js-yaml";
@@ -58,6 +60,10 @@ export default function EstimatorApp({
   const [inviting, setInviting] = useState(false);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
+  
+  // Модальные окна
+  const [alertModal, setAlertModal] = useState<{ title: string; message: string; type?: "success" | "error" | "info" } | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{ title: string; message: string; onConfirm: () => void; danger?: boolean } | null>(null);
   const [state, setState] = useState<AppState>(
     initialState ?? {
       project: {
@@ -241,7 +247,11 @@ export default function EstimatorApp({
       a.remove();
       URL.revokeObjectURL(url);
     } catch (e:any) {
-      alert(`Не удалось получить XLSX: ${e?.message || e}`);
+      setAlertModal({
+        title: "Ошибка",
+        message: `Не удалось получить XLSX: ${e?.message || e}`,
+        type: "error",
+      });
     } finally {
       setDownloading(false);
     }
@@ -256,7 +266,11 @@ export default function EstimatorApp({
       initialRef.current = state;
       dirtyRef.current = false;
     } catch (e: any) {
-      alert(e?.message || "Не удалось сохранить проект");
+      setAlertModal({
+        title: "Ошибка",
+        message: e?.message || "Не удалось сохранить проект",
+        type: "error",
+      });
     } finally {
       setSaving(false);
     }
@@ -265,15 +279,24 @@ export default function EstimatorApp({
   const handleCloseClick = () => {
     if (!onClose) return;
     if (dirtyRef.current) {
-      const ok = window.confirm("Есть несохранённые изменения. Точно закрыть?");
-      if (!ok) return;
+      setConfirmModal({
+        title: "Несохранённые изменения",
+        message: "Есть несохранённые изменения. Точно закрыть?",
+        onConfirm: onClose,
+        danger: true,
+      });
+    } else {
+      onClose();
     }
-    onClose();
   };
 
   const handleInviteClick = () => {
     if (!projectId) {
-      alert("Сначала сохраните проект");
+      setAlertModal({
+        title: "Проект не сохранён",
+        message: "Сначала сохраните проект",
+        type: "info",
+      });
       return;
     }
     setInviteModalOpen(true);
@@ -305,9 +328,17 @@ export default function EstimatorApp({
         throw new Error(data.error || "Не удалось пригласить пользователя");
       }
       
-      alert("Пользователь успешно приглашён!");
+      setAlertModal({
+        title: "Успешно",
+        message: "Пользователь успешно приглашён!",
+        type: "success",
+      });
     } catch (e: any) {
-      alert(e?.message || "Не удалось пригласить пользователя");
+      setAlertModal({
+        title: "Ошибка",
+        message: e?.message || "Не удалось пригласить пользователя",
+        type: "error",
+      });
       throw e;
     } finally {
       setInviting(false);
@@ -316,13 +347,69 @@ export default function EstimatorApp({
 
   const handleShare = async () => {
     if (!projectId) {
-      alert("Сначала сохраните проект");
+      setAlertModal({
+        title: "Проект не сохранён",
+        message: "Сначала сохраните проект",
+        type: "info",
+      });
       return;
     }
     
     const fullUrl = `${window.location.origin}/project/${projectId}/preview`;
     await navigator.clipboard.writeText(fullUrl);
-    alert("Ссылка скопирована в буфер обмена!");
+    setAlertModal({
+      title: "Успешно",
+      message: "Ссылка скопирована в буфер обмена!",
+      type: "success",
+    });
+  };
+
+  const handleDeleteProject = () => {
+    if (!projectId) return;
+
+    setConfirmModal({
+      title: "Удалить проект?",
+      message: "Вы уверены, что хотите удалить этот проект? Это действие нельзя отменить.",
+      onConfirm: async () => {
+        try {
+          const { supabase } = await import("@/lib/supabaseClient");
+          const { data: { session } } = await supabase.auth.getSession();
+          
+          if (!session?.access_token) {
+            throw new Error("Сессия истекла, перезайдите");
+          }
+
+          const res = await fetch("/api/delete-project", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId, accessToken: session.access_token }),
+          });
+
+          if (!res.ok) {
+            const data = await res.json();
+            throw new Error(data.error || "Не удалось удалить проект");
+          }
+
+          setAlertModal({
+            title: "Успешно",
+            message: "Проект удалён",
+            type: "success",
+          });
+
+          // Закрываем через секунду
+          setTimeout(() => {
+            if (onClose) onClose();
+          }, 1000);
+        } catch (e: any) {
+          setAlertModal({
+            title: "Ошибка",
+            message: e?.message || "Не удалось удалить проект",
+            type: "error",
+          });
+        }
+      },
+      danger: true,
+    });
   };
 
   const currentPresets = presetsByType(state.project.type);
@@ -409,12 +496,17 @@ export default function EstimatorApp({
     }
 
     if (lastDefaultsSig.current && lastDefaultsSig.current !== sig) {
-      const ok = window.confirm("Изменился тип проекта или БД. Пересоздать эпики по текущему шаблону? Ваши правки будут перезаписаны.");
-      if (ok) {
-        const defaults = await buildDefaultEpics();
-        setStateWithNotify((s) => ({ ...s, epics: defaults }));
-        lastDefaultsSig.current = sig;
-      }
+      setConfirmModal({
+        title: "Пересоздать эпики?",
+        message: "Изменился тип проекта или БД. Пересоздать эпики по текущему шаблону? Ваши правки будут перезаписаны.",
+        onConfirm: async () => {
+          const defaults = await buildDefaultEpics();
+          setStateWithNotify((s) => ({ ...s, epics: defaults }));
+          lastDefaultsSig.current = sig;
+        },
+        danger: true,
+      });
+      return;
     }
     setStep(2);
   };
@@ -679,14 +771,19 @@ export default function EstimatorApp({
               <button
                 className="btn"
                 type="button"
-                onClick={async () => {
-                  const ok = window.confirm("Пересоздать эпики по текущему шаблону? Ваши правки будут перезаписаны.");
-                  if (!ok) return;
-                  const defaults = await buildDefaultEpics();
-                  setStateWithNotify((s) => ({ ...s, epics: defaults }));
-                  const isMobile = state.project.type === "Mobile";
-                  const backend = state.project.stack.includes("Firebase") ? "Firebase" : "Supabase";
-                  lastDefaultsSig.current = `${isMobile ? 'mobile' : 'web'}|${backend}`;
+                onClick={() => {
+                  setConfirmModal({
+                    title: "Пересоздать эпики?",
+                    message: "Пересоздать эпики по текущему шаблону? Ваши правки будут перезаписаны.",
+                    onConfirm: async () => {
+                      const defaults = await buildDefaultEpics();
+                      setStateWithNotify((s) => ({ ...s, epics: defaults }));
+                      const isMobile = state.project.type === "Mobile";
+                      const backend = state.project.stack.includes("Firebase") ? "Firebase" : "Supabase";
+                      lastDefaultsSig.current = `${isMobile ? 'mobile' : 'web'}|${backend}`;
+                    },
+                    danger: true,
+                  });
                 }}
               >
                 Перегенерировать по шаблону
@@ -706,7 +803,7 @@ export default function EstimatorApp({
             editingByTaskId={collab?.editingByTaskId}
           />
           <div style={{display:"flex", justifyContent:"space-between", marginTop: 8, gap: 8, flexWrap:"wrap"}}>
-            <div style={{display:"flex", gap:8}}>
+            <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
               <button className="btn" type="button" onClick={() => setStep(1)}>Назад</button>
               {projectId && isOwner && (
                 <>
@@ -718,6 +815,9 @@ export default function EstimatorApp({
                   </button>
                   <button className="btn" type="button" onClick={() => setShowMembers(!showMembers)}>
                     {showMembers ? "Скрыть участников" : "Показать участников"}
+                  </button>
+                  <button className="btn danger" type="button" onClick={handleDeleteProject}>
+                    Удалить проект
                   </button>
                 </>
               )}
@@ -765,6 +865,27 @@ export default function EstimatorApp({
         onClose={() => setInviteModalOpen(false)}
         onInvite={handleInviteSubmit}
       />
+
+      {alertModal && (
+        <AlertModal
+          isOpen={true}
+          onClose={() => setAlertModal(null)}
+          title={alertModal.title}
+          message={alertModal.message}
+          type={alertModal.type}
+        />
+      )}
+
+      {confirmModal && (
+        <ConfirmModal
+          isOpen={true}
+          onClose={() => setConfirmModal(null)}
+          onConfirm={confirmModal.onConfirm}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          danger={confirmModal.danger}
+        />
+      )}
     </div>
   );
 }

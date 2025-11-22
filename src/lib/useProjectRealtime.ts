@@ -35,6 +35,14 @@ export function useProjectRealtime(
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const connectionStableTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const presenceUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const onRemotePatchRef = useRef(onRemotePatch);
+  const isInitializedRef = useRef(false);
+
+  // Обновляем ref при изменении callback
+  useEffect(() => {
+    onRemotePatchRef.current = onRemotePatch;
+  }, [onRemotePatch]);
 
   const myPresenceRef = useRef<PresencePayload>({
     userId: currentUser.id,
@@ -83,6 +91,7 @@ export function useProjectRealtime(
   // Подключение к каналу
   const connectChannel = useCallback(() => {
     if (!enabled) return;
+    if (!currentUser.id || !projectId) return;
 
     const channelName = `project:${projectId}`;
     const channel = supabase.channel(channelName, {
@@ -93,23 +102,41 @@ export function useProjectRealtime(
       },
     });
 
-    // Обработка presence sync
+    // Обработка presence sync с debounce
     channel.on("presence", { event: "sync" }, () => {
-      const state = channel.presenceState();
-      const users: PresencePayload[] = [];
+      // Очищаем предыдущий таймер
+      if (presenceUpdateTimeoutRef.current) {
+        clearTimeout(presenceUpdateTimeoutRef.current);
+      }
 
-      Object.keys(state).forEach((key) => {
-        const presences = state[key] as any[];
-        if (presences && presences.length > 0) {
-          const presence = presences[0] as PresencePayload;
-          // Проверяем что это валидный PresencePayload
-          if (presence.userId && presence.email) {
-            users.push(presence);
+      // Обновляем presence с задержкой, чтобы избежать мигания
+      presenceUpdateTimeoutRef.current = setTimeout(() => {
+        const state = channel.presenceState();
+        const users: PresencePayload[] = [];
+
+        Object.keys(state).forEach((key) => {
+          const presences = state[key] as any[];
+          if (presences && presences.length > 0) {
+            const presence = presences[0] as PresencePayload;
+            // Проверяем что это валидный PresencePayload
+            if (presence.userId && presence.email) {
+              users.push(presence);
+            }
           }
-        }
-      });
+        });
 
-      setPresenceList(users);
+        // Обновляем только если список действительно изменился
+        setPresenceList((prev) => {
+          if (prev.length !== users.length) return users;
+          
+          const prevIds = prev.map(u => u.userId).sort().join(',');
+          const newIds = users.map(u => u.userId).sort().join(',');
+          
+          if (prevIds !== newIds) return users;
+          
+          return prev;
+        });
+      }, 500); // Задержка 500мс для группировки быстрых изменений
     });
 
     // Обработка broadcast сообщений
@@ -121,22 +148,16 @@ export function useProjectRealtime(
         return;
       }
 
-      onRemotePatch(message);
+      onRemotePatchRef.current(message);
     });
 
     // Подписка на канал
     channel
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
-          // Debounce для isConnected - устанавливаем только если соединение стабильно 1 сек
-          if (connectionStableTimeoutRef.current) {
-            clearTimeout(connectionStableTimeoutRef.current);
-          }
-          
-          connectionStableTimeoutRef.current = setTimeout(() => {
-            setIsConnected(true);
-            reconnectAttemptsRef.current = 0;
-          }, 1000);
+          // Сразу устанавливаем connected без задержки
+          setIsConnected(true);
+          reconnectAttemptsRef.current = 0;
 
           // Отправляем начальное presence
           await channel.track(myPresenceRef.current);
@@ -148,14 +169,14 @@ export function useProjectRealtime(
           
           connectionStableTimeoutRef.current = setTimeout(() => {
             setIsConnected(false);
-          }, 2000);
+          }, 3000); // Увеличили до 3 сек
           
           handleReconnect();
         }
       });
 
     channelRef.current = channel;
-  }, [enabled, projectId, currentUser.id, onRemotePatch]);
+  }, [enabled, projectId, currentUser.id, currentUser.email]);
 
   // Реконнект с экспоненциальным backoff
   const handleReconnect = useCallback(() => {
@@ -182,7 +203,11 @@ export function useProjectRealtime(
 
   // Инициализация при монтировании
   useEffect(() => {
-    connectChannel();
+    // Подключаемся только один раз
+    if (!isInitializedRef.current && enabled && currentUser.id && projectId) {
+      isInitializedRef.current = true;
+      connectChannel();
+    }
 
     return () => {
       if (reconnectTimeoutRef.current) {
@@ -193,12 +218,17 @@ export function useProjectRealtime(
         clearTimeout(connectionStableTimeoutRef.current);
       }
 
+      if (presenceUpdateTimeoutRef.current) {
+        clearTimeout(presenceUpdateTimeoutRef.current);
+      }
+
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
+        isInitializedRef.current = false;
       }
     };
-  }, [connectChannel]);
+  }, [connectChannel, enabled, currentUser.id, projectId]);
 
   return {
     presenceList,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import EstimatorApp from "@/components/EstimatorApp";
 import { ProjectCollabProvider } from "@/components/ProjectCollabProvider";
@@ -66,6 +66,12 @@ export default function ProjectPage() {
     tasks: new Map<string, number>(),
   });
 
+  // Мемоизируем currentUser чтобы не пересоздавать объект (должно быть до условных return)
+  const currentUser = useMemo(() => ({
+    id: currentUserId || "",
+    email: currentUserEmail,
+  }), [currentUserId, currentUserEmail]);
+
   // Обработчик remote патчей (должен быть до условных return)
   const handleRemotePatch = useCallback((message: RealtimeMessage) => {
     if (!stateRef.current || !setStateCallback.current) return;
@@ -82,47 +88,74 @@ export default function ProjectPage() {
     }
   }, []);
 
-  useEffect(() => {
+  // Функция загрузки проекта
+  const loadProject = useCallback(async () => {
     if (!projectId) return;
 
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (!session) {
-          router.replace("/");
-          return;
-        }
+    setLoading(true);
+    setError(null);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        router.replace("/");
+        return;
+      }
 
-        setCurrentUserId(session.user.id);
-        setCurrentUserEmail(session.user.email || "");
+      setCurrentUserId(session.user.id);
+      setCurrentUserEmail(session.user.email || "");
 
-        const { data, error } = await supabase
-          .from("projects")
-          .select("payload, owner_id")
-          .eq("id", projectId)
-          .single();
+      const { data, error } = await supabase
+        .from("projects")
+        .select("payload, owner_id")
+        .eq("id", projectId)
+        .single();
 
-        if (error) throw error;
-        if (!data?.payload) throw new Error("Проект не найден");
+      if (error) throw error;
+      if (!data?.payload) throw new Error("Проект не найден");
 
-        // Проверяем, является ли пользователь владельцем
-        setIsOwner(data.owner_id === session.user.id);
+      // Проверяем, является ли пользователь владельцем
+      setIsOwner(data.owner_id === session.user.id);
 
-        const normalized = normalizeAppState(data.payload as any);
-        setInitialState(normalized);
-      } catch (e: any) {
-        setError(e?.message || "Не удалось загрузить проект");
-      } finally {
-        setLoading(false);
+      const normalized = normalizeAppState(data.payload as any);
+      setInitialState(normalized);
+      
+      // Обновляем timestamps при загрузке
+      const now = Date.now();
+      timestampsRef.current.projectMeta = now;
+      normalized.epics.forEach((epic) => {
+        timestampsRef.current.epics.set(epic.id, now);
+        epic.tasks.forEach((task) => {
+          timestampsRef.current.tasks.set(task.id, now);
+        });
+      });
+    } catch (e: any) {
+      setError(e?.message || "Не удалось загрузить проект");
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId, router]);
+
+  // Загрузка при монтировании
+  useEffect(() => {
+    loadProject();
+  }, [loadProject]);
+
+  // Перезагрузка при возвращении на вкладку
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && !loading) {
+        loadProject();
       }
     };
 
-    load();
-  }, [projectId, router]);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [loadProject, loading]);
 
   const handleSave = async (state: AppState) => {
     const {
@@ -188,10 +221,7 @@ export default function ProjectPage() {
   return (
     <ProjectCollabProvider
       projectId={projectId || ""}
-      currentUser={{
-        id: currentUserId || "",
-        email: currentUserEmail,
-      }}
+      currentUser={currentUser}
       onRemotePatch={handleRemotePatch}
       enabled={realtimeEnabled}
     >

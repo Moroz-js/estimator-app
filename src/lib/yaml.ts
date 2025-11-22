@@ -13,6 +13,7 @@ export function generateYaml(state: AppState): string {
       date: state.project.date,
       type: typeNormalized,
       stack: state.project.stack,
+      language: state.project.language || "en",
     },
     epics: state.epics.map((e) => ({
       title: e.title,
