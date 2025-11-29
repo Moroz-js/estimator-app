@@ -3,6 +3,7 @@ import EpicEditor from "@/components/EpicEditor";
 import StackMultiSelect from "@/components/StackMultiSelect";
 import YAMLPreview from "@/components/YAMLPreview";
 import InviteModal from "@/components/InviteModal";
+import ImportEpicsModal from "@/components/ImportEpicsModal";
 import ProjectMembers from "@/components/ProjectMembers";
 import { UserAvatarGroup } from "@/components/UserAvatar";
 import { useProjectCollab } from "@/components/ProjectCollabProvider";
@@ -59,6 +60,7 @@ export default function EstimatorApp({
   const [saving, setSaving] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [importEpicsModalOpen, setImportEpicsModalOpen] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
   
   // Модальные окна
@@ -92,6 +94,9 @@ export default function EstimatorApp({
 
   // Debounce для isTyping
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Автосохранение
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Обёртка setState для уведомления о изменениях
   const setStateWithNotify = useCallback((newState: AppState | ((prev: AppState) => AppState)) => {
@@ -134,6 +139,54 @@ export default function EstimatorApp({
     const isDirty = JSON.stringify(state) !== JSON.stringify(initialRef.current);
     dirtyRef.current = isDirty;
   }, [state]);
+
+  // Функция сохранения (используется и вручную, и автоматически)
+  const handleSave = useCallback(async () => {
+    if (!onSave) return;
+    setSaving(true);
+    try {
+      await onSave(state);
+      // Сбрасываем индикатор несохранённых изменений на текущий снимок
+      initialRef.current = state;
+      dirtyRef.current = false;
+    } catch (e: any) {
+      setAlertModal({
+        title: "Ошибка",
+        message: e?.message || "Не удалось сохранить проект",
+        type: "error",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }, [onSave, state]);
+
+  // Автосохранение через 5 секунд после последнего изменения
+  useEffect(() => {
+    // Очищаем предыдущий таймер
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+
+    // Не запускаем автосохранение если:
+    // - нет функции сохранения
+    // - нет несохраненных изменений
+    // - уже идет сохранение
+    if (!onSave || !dirtyRef.current || saving) {
+      return;
+    }
+
+    // Запускаем таймер на 5 секунд
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      handleSave();
+    }, 5000);
+
+    // Очистка при размонтировании
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
+  }, [state, onSave, saving, handleSave]);
 
   const canNext = state.project.name.trim().length > 0;
 
@@ -254,25 +307,6 @@ export default function EstimatorApp({
       });
     } finally {
       setDownloading(false);
-    }
-  };
-
-  const handleSave = async () => {
-    if (!onSave) return;
-    setSaving(true);
-    try {
-      await onSave(state);
-      // Сбрасываем индикатор несохранённых изменений на текущий снимок
-      initialRef.current = state;
-      dirtyRef.current = false;
-    } catch (e: any) {
-      setAlertModal({
-        title: "Ошибка",
-        message: e?.message || "Не удалось сохранить проект",
-        type: "error",
-      });
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -423,91 +457,7 @@ export default function EstimatorApp({
     });
   };
 
-  type TemplateTask = { type: SubtaskType; title: string; estimate?: number };
-  type TemplateEpic = { title: string; tasks: TemplateTask[] };
-  type DefaultsYaml = {
-    mobile?: TemplateEpic[];
-    web?: TemplateEpic[];
-    integrations?: TemplateEpic[];
-    webflow?: TemplateEpic[];
-    weweb?: TemplateEpic[];
-    flutterflow?: TemplateEpic[];
-  };
-
-  const buildDefaultEpics = async (): Promise<Epic[]> => {
-    const res = await fetch("/defaults.yaml", { cache: "no-store" });
-    const text = await res.text();
-    const parsed = jsyaml.load(text) as DefaultsYaml;
-
-    const isMobile = state.project.type === "Mobile";
-    const wantsWebflow = state.project.stack.includes("Webflow");
-    const wantsWeweb = state.project.stack.includes("Weweb");
-    const setKey = isMobile
-      ? (parsed.flutterflow ? "flutterflow" : "mobile")
-      : (wantsWebflow && (parsed as any).webflow ? "webflow" : (parsed as any).weweb ? "weweb" : "web");
-    const backend = state.project.stack.includes("Firebase")
-      ? "Firebase"
-      : state.project.stack.includes("Supabase")
-      ? "Supabase"
-      : "Supabase";
-
-    const baseList: TemplateEpic[] = [...((parsed as any)[setKey] || [])];
-    const integrations: TemplateEpic[] = parsed.integrations || [];
-    if (setKey === "mobile" || setKey === "flutterflow") {
-      const pubIdx = baseList.findIndex((e) =>
-        e.title === "AppStore & GooglePlay publishing" || e.title === "AppStore & GooglePlay deploy"
-      );
-      const before = pubIdx >= 0 ? baseList.slice(0, pubIdx) : baseList;
-      const after = pubIdx >= 0 ? baseList.slice(pubIdx) : [];
-      var merged: TemplateEpic[] = [...before, ...integrations, ...after];
-    } else {
-      var merged: TemplateEpic[] = [...baseList, ...integrations];
-    }
-    let epics: Epic[] = merged.map((e) => ({
-      id: uid("epic"),
-      title: e.title,
-      tasks: e.tasks.map((t) => ({
-        id: uid("t"),
-        type: t.type,
-        title: t.title.replace("{{BACKEND}}", backend),
-        estimate: t.estimate,
-        comment: "",
-      })),
-    }));
-
-    return epics;
-  };
-
-  const proceedToEpics = async () => {
-    const isMobile = state.project.type === "Mobile";
-    const backend = state.project.stack.includes("Firebase")
-      ? "Firebase"
-      : state.project.stack.includes("Supabase")
-      ? "Supabase"
-      : "Supabase";
-    const sig = `${isMobile ? "mobile" : "web"}|${backend}`;
-
-    if (state.epics.length === 0) {
-      const defaults = await buildDefaultEpics();
-      setStateWithNotify((s) => ({ ...s, epics: defaults }));
-      lastDefaultsSig.current = sig;
-      setStep(2);
-      return;
-    }
-
-    if (lastDefaultsSig.current && lastDefaultsSig.current !== sig) {
-      setConfirmModal({
-        title: "Пересоздать эпики?",
-        message: "Изменился тип проекта или БД. Пересоздать эпики по текущему шаблону? Ваши правки будут перезаписаны.",
-        onConfirm: async () => {
-          const defaults = await buildDefaultEpics();
-          setStateWithNotify((s) => ({ ...s, epics: defaults }));
-          lastDefaultsSig.current = sig;
-        },
-        danger: true,
-      });
-      return;
-    }
+  const proceedToEpics = () => {
     setStep(2);
   };
 
@@ -768,26 +718,6 @@ export default function EstimatorApp({
                   </div>
                 );
               })()}
-              <button
-                className="btn"
-                type="button"
-                onClick={() => {
-                  setConfirmModal({
-                    title: "Пересоздать эпики?",
-                    message: "Пересоздать эпики по текущему шаблону? Ваши правки будут перезаписаны.",
-                    onConfirm: async () => {
-                      const defaults = await buildDefaultEpics();
-                      setStateWithNotify((s) => ({ ...s, epics: defaults }));
-                      const isMobile = state.project.type === "Mobile";
-                      const backend = state.project.stack.includes("Firebase") ? "Firebase" : "Supabase";
-                      lastDefaultsSig.current = `${isMobile ? 'mobile' : 'web'}|${backend}`;
-                    },
-                    danger: true,
-                  });
-                }}
-              >
-                Перегенерировать по шаблону
-              </button>
             </div>
           </div>
           {errors && Object.keys(errors).length > 0 && (
@@ -805,6 +735,11 @@ export default function EstimatorApp({
           <div style={{display:"flex", justifyContent:"space-between", marginTop: 8, gap: 8, flexWrap:"wrap"}}>
             <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
               <button className="btn" type="button" onClick={() => setStep(1)}>Назад</button>
+              {isOwner && (
+                <button className="btn" type="button" onClick={() => setImportEpicsModalOpen(true)}>
+                  Импорт эпиков
+                </button>
+              )}
               {projectId && isOwner && (
                 <>
                   <button className="btn" type="button" onClick={handleShare}>
@@ -864,6 +799,18 @@ export default function EstimatorApp({
         isOpen={inviteModalOpen}
         onClose={() => setInviteModalOpen(false)}
         onInvite={handleInviteSubmit}
+      />
+
+      <ImportEpicsModal
+        isOpen={importEpicsModalOpen}
+        onClose={() => setImportEpicsModalOpen(false)}
+        onImport={(epics) => {
+          setStateWithNotify((prev) => ({
+            ...prev,
+            epics: [...prev.epics, ...epics],
+          }));
+          dirtyRef.current = true;
+        }}
       />
 
       {alertModal && (

@@ -58,6 +58,9 @@ export default function ProjectPage() {
   // Ref для хранения актуального состояния (для realtime патчей)
   const stateRef = useRef<AppState | undefined>(undefined);
   const setStateCallback = useRef<((state: AppState) => void) | null>(null);
+  
+  // Флаг несохранённых изменений
+  const hasUnsavedChangesRef = useRef(false);
 
   // Timestamps для разрешения конфликтов
   const timestampsRef = useRef({
@@ -142,10 +145,10 @@ export default function ProjectPage() {
     loadProject();
   }, [loadProject]);
 
-  // Перезагрузка при возвращении на вкладку
+  // Перезагрузка при возвращении на вкладку (только если нет несохранённых изменений)
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible" && !loading) {
+      if (document.visibilityState === "visible" && !loading && !hasUnsavedChangesRef.current) {
         loadProject();
       }
     };
@@ -175,7 +178,9 @@ export default function ProjectPage() {
       .eq("id", projectId);
 
     if (error) throw error;
-    // Остаёмся на странице после сохранения
+    
+    // Сбрасываем флаг несохранённых изменений после успешного сохранения
+    hasUnsavedChangesRef.current = false;
   };
 
   if (!projectId) {
@@ -234,6 +239,8 @@ export default function ProjectPage() {
         isOwner={isOwner}
         onStateChange={(newState) => {
           stateRef.current = newState;
+          // Устанавливаем флаг при любом изменении состояния
+          hasUnsavedChangesRef.current = true;
         }}
         onSetStateCallback={(callback) => {
           setStateCallback.current = callback;

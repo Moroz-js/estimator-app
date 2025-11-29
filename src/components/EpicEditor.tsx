@@ -15,19 +15,21 @@ export interface EpicEditorProps {
   errors?: ValidationMap;
   editingByEpicId?: Record<string, PresencePayload[]>;
   editingByTaskId?: Record<string, PresencePayload[]>;
+  projectType?: "Web" | "Mobile";
 }
 
 function uid(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export default function EpicEditor({ value, onChange, errors, editingByEpicId, editingByTaskId }: EpicEditorProps) {
+export default function EpicEditor({ value, onChange, errors, editingByEpicId, editingByTaskId, projectType: propProjectType = "Web" }: EpicEditorProps) {
   const [query, setQuery] = useState("");
   const [selectedEpicId, setSelectedEpicId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [presetsOpen, setPresetsOpen] = useState(false);
   const [presets, setPresets] = useState<Array<{ title: string; tasks: { type: string; title: string; estimate?: number }[] }>>([]);
   const [previewIdx, setPreviewIdx] = useState<number | null>(null);
+  const [projectType, setProjectType] = useState<"Web" | "Mobile">("Web");
 
   // Realtime collaboration
   let collab: ReturnType<typeof useProjectCollab> | null = null;
@@ -88,14 +90,16 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
     }, 2000);
   }, [collab]);
 
-  const loadPresets = async () => {
+  const loadPresets = async (type: "Web" | "Mobile") => {
     if (presets.length) return;
     try {
       const res = await fetch("/presets.yaml", { cache: "no-store" });
       const text = await res.text();
       const parsed = jsyaml.load(text) as any;
-      const list = Array.isArray(parsed?.presets) ? parsed.presets : [];
+      const typeKey = type.toLowerCase();
+      const list = Array.isArray(parsed?.[typeKey]) ? parsed[typeKey] : [];
       setPresets(list);
+      setProjectType(type);
     } catch {}
   };
 
@@ -108,6 +112,7 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
     window.addEventListener('keydown', onKey as any);
     return () => window.removeEventListener('keydown', onKey as any);
   }, [presetsOpen]);
+
   const addEpic = () => {
     const nextEpic: Epic = { id: uid("epic"), title: "", tasks: [] };
     const authIdx = value.findIndex((e) => e.title === "Auth");
@@ -163,6 +168,8 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
       } as any);
     }
   };
+
+
 
   const removeEpic = (id: string) => {
     onChange(value.filter((e) => e.id !== id));
@@ -377,19 +384,20 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
               <button
                 className="btn"
                 type="button"
-                onClick={async () => { setPresetsOpen((v) => !v); await loadPresets(); }}
+                onClick={async () => { setPresetsOpen((v) => !v); await loadPresets(propProjectType); }}
               >
                 Из шаблонов
               </button>
             </div>
           </div>
+
           {presetsOpen && createPortal(
             (
               <div style={{position:'fixed', inset:0, zIndex:60}}>
                 <div onClick={() => setPresetsOpen(false)} style={{position:'absolute', inset:0, background:'rgba(15,23,42,.45)'}} />
                 <div style={{position:'relative', zIndex:61, maxWidth:720, width:'90%', margin:'10vh auto', background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, padding:12, boxShadow:'0 20px 60px rgba(2,6,23,.25)'}}>
                   <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                    <div style={{fontWeight:700}}>Выбрать эпик из шаблонов</div>
+                    <div style={{fontWeight:700}}>Выбрать эпик из шаблонов ({projectType})</div>
                     <button className="icon-btn" title="Закрыть" onClick={() => setPresetsOpen(false)}>✕</button>
                   </div>
                   <div className="divider" />
@@ -444,6 +452,7 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
                 </div>
               </div>
             ), document.body)}
+
           {filteredEpics.map((epic) => (
             <div
               key={epic.id}
