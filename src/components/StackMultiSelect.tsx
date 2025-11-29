@@ -52,15 +52,15 @@ export default function StackMultiSelect({ value, onChange, presets, allowCustom
       {allowCustom && (
         <div className="input-inline">
           <input
-            placeholder="Добавить свой инструмент"
+            placeholder="Add your own tool"
             value={custom}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setCustom(e.target.value)}
             onKeyDown={onKey}
           />
-          <button type="button" className="btn" onClick={addCustom}>Добавить</button>
+          <button type="button" className="btn" onClick={addCustom}>Add</button>
         </div>
       )}
-      <div className="small">Выбранные: {value.length ? value.join(", ") : "ничего"}</div>
+      <div className="small">Selected: {value.length ? value.join(", ") : "nothing"}</div>
     </div>
   );
 }

@@ -76,15 +76,15 @@ export default function InviteModal({ isOpen, onClose, onInvite }: InviteModalPr
         }}
       >
         <div className="card-header">
-          <h2>Пригласить пользователя</h2>
+          <h2>Invite user</h2>
           <div className="small" style={{ color: "#64748b" }}>
-            Введите email зарегистрированного пользователя
+            Enter the email of a registered user
           </div>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="grid">
             <div>
-              <label>Email пользователя *</label>
+              <label>User email *</label>
               <input
                 type="email"
                 placeholder="user@example.com"
@@ -95,7 +95,7 @@ export default function InviteModal({ isOpen, onClose, onInvite }: InviteModalPr
                 disabled={inviting}
               />
               <div className="small" style={{ color: "#64748b", marginTop: 6 }}>
-                Приглашённый пользователь сможет редактировать проект, но не сможет приглашать других
+                The invited user will be able to edit the project but cannot invite others
               </div>
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -105,14 +105,14 @@ export default function InviteModal({ isOpen, onClose, onInvite }: InviteModalPr
                 onClick={onClose}
                 disabled={inviting}
               >
-                Отмена
+                Cancel
               </button>
               <button
                 type="submit"
                 className="btn primary"
                 disabled={inviting || !email.trim()}
               >
-                {inviting ? "Приглашение..." : "Пригласить"}
+                {inviting ? "Inviting..." : "Invite"}
               </button>
             </div>
           </div>

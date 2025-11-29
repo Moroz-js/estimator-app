@@ -35,10 +35,10 @@ export default function LoginPage() {
       } else {
         const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-        setInfo("Мы отправили письмо для подтверждения. После подтверждения войдите с этим email и паролем.");
+        setInfo("We sent a confirmation email. After confirmation, log in with this email and password.");
       }
     } catch (e: any) {
-      setError(e?.message || "Ошибка авторизации");
+      setError(e?.message || "Authorization error");
     } finally {
       setLoading(false);
     }
@@ -48,7 +48,7 @@ export default function LoginPage() {
     <div className="viewport">
       <div className="card" style={{ maxWidth: 420, width: "100%" }}>
         <div className="card-header">
-          <h2>{authView === "signIn" ? "Вход" : "Регистрация"}</h2>
+          <h2>{authView === "signIn" ? "Sign In" : "Sign Up"}</h2>
         </div>
         <div className="grid">
           <div>
@@ -61,12 +61,12 @@ export default function LoginPage() {
             />
           </div>
           <div>
-            <label>Пароль</label>
+            <label>Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Минимум 6 символов"
+              placeholder="Minimum 6 characters"
             />
           </div>
           {info && !error && (
@@ -85,7 +85,7 @@ export default function LoginPage() {
               type="button"
               onClick={() => setAuthView(authView === "signIn" ? "signUp" : "signIn")}
             >
-              {authView === "signIn" ? "Нет аккаунта? Регистрация" : "Уже есть аккаунт? Войти"}
+              {authView === "signIn" ? "No account? Sign Up" : "Already have an account? Sign In"}
             </button>
             <button
               className="btn primary"
@@ -93,7 +93,7 @@ export default function LoginPage() {
               onClick={handleAuth}
               disabled={loading || !email || !password}
             >
-              {loading ? "Подождите..." : authView === "signIn" ? "Войти" : "Зарегистрироваться"}
+              {loading ? "Please wait..." : authView === "signIn" ? "Sign In" : "Sign Up"}
             </button>
           </div>
         </div>

@@ -26,7 +26,7 @@ export default function ImportEpicsModal({ isOpen, onClose, onImport }: ImportEp
       const epics = await parseExcelToEpics(file);
       
       if (epics.length === 0) {
-        setError("Файл не содержит эпиков или имеет неверный формат");
+        setError("The file contains no epics or has an invalid format");
         setParsedEpics([]);
         return;
       }
@@ -36,7 +36,7 @@ export default function ImportEpicsModal({ isOpen, onClose, onImport }: ImportEp
       setSelectedIds(new Set(epics.map(e => e.id)));
     } catch (err) {
       console.error("Parse error:", err);
-      setError(err instanceof Error ? err.message : "Ошибка при парсинге файла");
+      setError(err instanceof Error ? err.message : "Error parsing file");
       setParsedEpics([]);
     } finally {
       setLoading(false);
@@ -72,14 +72,14 @@ export default function ImportEpicsModal({ isOpen, onClose, onImport }: ImportEp
     <div className="modal-backdrop" onClick={handleClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>Импорт эпиков из Excel</h3>
+          <h3>Import epics from Excel</h3>
           <button className="modal-close" onClick={handleClose}>×</button>
         </div>
         <div className="modal-body" style={{ overflowY: parsedEpics.length > 0 ? "auto" : "visible" }}>
           {parsedEpics.length === 0 ? (
             <>
               <p className="small" style={{ marginBottom: 16 }}>
-                Выберите Excel файл с эпиками для импорта
+                Select an Excel file with epics to import
               </p>
               <input
                 type="file"
@@ -88,13 +88,13 @@ export default function ImportEpicsModal({ isOpen, onClose, onImport }: ImportEp
                 disabled={loading}
                 style={{ marginBottom: 16 }}
               />
-              {loading && <p>Парсинг файла...</p>}
+              {loading && <p>Parsing file...</p>}
               {error && <p style={{ color: "red" }}>{error}</p>}
             </>
           ) : (
             <>
               <p className="small" style={{ marginBottom: 16, color: "#64748b" }}>
-                Найдено эпиков: {parsedEpics.length}. Выберите для импорта:
+                Found {parsedEpics.length} epics. Select to import:
               </p>
               <div>
                 {parsedEpics.map((epic) => {
@@ -137,7 +137,7 @@ export default function ImportEpicsModal({ isOpen, onClose, onImport }: ImportEp
                           </div>
                           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                             <span className="small" style={{ color: "#64748b" }}>
-                              {epic.tasks.length} задач • {totalHours} ч
+                              {epic.tasks.length} tasks • {totalHours} h
                             </span>
                             {Object.entries(tasksByType).map(([type, count]) => (
                               <span
@@ -185,7 +185,7 @@ export default function ImportEpicsModal({ isOpen, onClose, onImport }: ImportEp
                             </span>
                             <span style={{ color: "#0f172a" }}>{task.title}</span>
                             <span style={{ color: "#64748b", textAlign: "right" }}>
-                              {task.estimate || 0}ч
+                              {task.estimate || 0}h
                             </span>
                           </div>
                         ))}
@@ -199,7 +199,7 @@ export default function ImportEpicsModal({ isOpen, onClose, onImport }: ImportEp
         </div>
         <div className="modal-footer">
           <button className="btn" onClick={handleClose}>
-            Отмена
+            Cancel
           </button>
           {parsedEpics.length > 0 && (
             <button
@@ -207,7 +207,7 @@ export default function ImportEpicsModal({ isOpen, onClose, onImport }: ImportEp
               onClick={handleImport}
               disabled={selectedIds.size === 0}
             >
-              Импортировать ({selectedIds.size})
+              Import ({selectedIds.size})
             </button>
           )}
         </div>

@@ -20,8 +20,8 @@ export default function ConfirmModal({
   onConfirm,
   title,
   message,
-  confirmText = "Подтвердить",
-  cancelText = "Отмена",
+  confirmText = "Confirm",
+  cancelText = "Cancel",
   danger = false,
 }: ConfirmModalProps) {
   useEffect(() => {

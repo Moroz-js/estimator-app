@@ -4,9 +4,9 @@ export default function YAMLPreview({ value }: { value: string }) {
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(value);
-      alert("Скопировано в буфер обмена");
+      alert("Copied to clipboard");
     } catch (e) {
-      alert("Не удалось скопировать");
+      alert("Failed to copy");
     }
   };
 

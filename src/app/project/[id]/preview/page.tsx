@@ -60,12 +60,12 @@ export default function ProjectPreviewPage() {
           .single();
 
         if (error) throw error;
-        if (!data?.payload) throw new Error("Проект не найден");
+        if (!data?.payload) throw new Error("Project not found");
 
         const normalized = normalizeAppState(data.payload as any);
         setState(normalized);
       } catch (e: any) {
-        setError(e?.message || "Не удалось загрузить проект");
+        setError(e?.message || "Failed to load project");
       } finally {
         setLoading(false);
       }
@@ -99,7 +99,7 @@ export default function ProjectPreviewPage() {
           </div>
           <div className="grid">
             <div className="small" style={{ color: "#ef4444" }}>
-              {error || "Проект не найден"}
+              {error || "Project not found"}
             </div>
           </div>
         </div>
@@ -139,7 +139,7 @@ export default function ProjectPreviewPage() {
             </div>
             <div>
               <div className="small" style={{ color: "#64748b", marginBottom: 4 }}>Язык</div>
-              <div>{state.project.language === "en" ? "English" : "Русский"}</div>
+              <div>{state.project.language === "en" ? "English" : "Russian"}</div>
             </div>
             <div>
               <div className="small" style={{ color: "#64748b", marginBottom: 4 }}>Дата</div>
@@ -165,12 +165,12 @@ export default function ProjectPreviewPage() {
               </div>
             </div>
             <div>
-              <div className="small" style={{ color: "#64748b", marginBottom: 4 }}>Оценка времени</div>
+              <div className="small" style={{ color: "#64748b", marginBottom: 4 }}>Esimate</div>
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                 <span className="small">BA: {hoursByType.BA} ч</span>
                 <span className="small">NC: {hoursByType.NC} ч</span>
                 <span className="small">DE: {hoursByType.DE} ч</span>
-                <span className="small" style={{ fontWeight: 600 }}>Всего: {totalHours} ч</span>
+                <span className="small" style={{ fontWeight: 600 }}>Total: {totalHours} ч</span>
               </div>
             </div>
           </div>
@@ -207,7 +207,7 @@ export default function ProjectPreviewPage() {
                     {epicIndex + 1}. {epic.title}
                   </div>
                   <div className="small" style={{ color: "#64748b" }}>
-                    {epicTotal} ч
+                    {epicTotal} h
                   </div>
                 </div>
                 <div style={{ padding: "8px 0" }}>
@@ -238,7 +238,7 @@ export default function ProjectPreviewPage() {
                       </span>
                       <div style={{ flex: 1 }}>{task.title}</div>
                       <div className="small" style={{ color: "#64748b", minWidth: 50, textAlign: "right" }}>
-                        {task.estimate ? `${task.estimate} ч` : "—"}
+                        {task.estimate ? `${task.estimate} h` : "—"}
                       </div>
                     </div>
                   ))}

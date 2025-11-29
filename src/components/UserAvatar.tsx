@@ -68,7 +68,7 @@ export function UserAvatarGroup({ users, maxVisible = 5, size = "medium" }: User
             fontWeight: 600,
             flexShrink: 0,
           }}
-          title={`Ещё ${remaining} ${remaining === 1 ? "пользователь" : "пользователей"}`}
+          title={`${remaining} more ${remaining === 1 ? "user" : "users"}`}
         >
           +{remaining}
         </div>

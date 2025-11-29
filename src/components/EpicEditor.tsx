@@ -368,7 +368,7 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
     <div className="epics-layout">
       <div className="ep-topbar">
         <input
-          placeholder="Поиск по эпику"
+          placeholder="Search in epic"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           style={{maxWidth: 320}}
@@ -378,15 +378,15 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
       <div className="ep-cols">
         <aside className="ep-list">
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', padding:'4px 4px 8px 4px'}}>
-            <div className="small" style={{color:'#475569'}}>Эпики</div>
+            <div className="small" style={{color:'#475569'}}>Epics</div>
             <div style={{display:'flex', gap:6}}>
-              <button className="btn" type="button" onClick={addEpic}>+ Эпик</button>
+              <button className="btn" type="button" onClick={addEpic}>+ Epic</button>
               <button
                 className="btn"
                 type="button"
                 onClick={async () => { setPresetsOpen((v) => !v); await loadPresets(propProjectType); }}
               >
-                Из шаблонов
+                Templates
               </button>
             </div>
           </div>
@@ -397,16 +397,16 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
                 <div onClick={() => setPresetsOpen(false)} style={{position:'absolute', inset:0, background:'rgba(15,23,42,.45)'}} />
                 <div style={{position:'relative', zIndex:61, maxWidth:720, width:'90%', margin:'10vh auto', background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, padding:12, boxShadow:'0 20px 60px rgba(2,6,23,.25)'}}>
                   <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                    <div style={{fontWeight:700}}>Выбрать эпик из шаблонов ({projectType})</div>
-                    <button className="icon-btn" title="Закрыть" onClick={() => setPresetsOpen(false)}>✕</button>
+                    <div style={{fontWeight:700}}>Choose from templates ({projectType})</div>
+                    <button className="icon-btn" title="Close" onClick={() => setPresetsOpen(false)}>✕</button>
                   </div>
                   <div className="divider" />
                   <div style={{display:'grid', gap:8}}>
                     {presets.map((p, idx) => (
                       <div key={idx} className="section" style={{padding:8, display:'grid', gridTemplateColumns:'1fr auto auto', alignItems:'center', gap:8}}>
                         <div style={{fontWeight:600}}>{p.title}</div>
-                        <button className="btn" type="button" onClick={() => setPreviewIdx(previewIdx === idx ? null : idx)}>Инфо</button>
-                        <button className="btn primary" type="button" onClick={() => addEpicFromPreset(idx)}>Добавить</button>
+                        <button className="btn" type="button" onClick={() => setPreviewIdx(previewIdx === idx ? null : idx)}>Info</button>
+                        <button className="btn primary" type="button" onClick={() => addEpicFromPreset(idx)}>Add</button>
                         {previewIdx === idx && (() => {
                           const sums = (p.tasks || []).reduce((acc, t) => {
                             const v = typeof t.estimate === 'number' && !Number.isNaN(t.estimate) ? t.estimate : 0;
@@ -415,18 +415,18 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
                           return (
                             <div style={{gridColumn:'1 / -1'}}>
                               <div style={{display:'flex', gap:6, marginTop:6}}>
-                                <span className="small" style={{color:'#475569', border:'1px solid #e2e8f0', borderRadius:8, padding:'2px 6px'}}>BA: {sums.BA} ч</span>
-                                <span className="small" style={{color:'#475569', border:'1px solid #e2e8f0', borderRadius:8, padding:'2px 6px'}}>NC: {sums.NC} ч</span>
-                                <span className="small" style={{color:'#475569', border:'1px solid #e2e8f0', borderRadius:8, padding:'2px 6px'}}>DE: {sums.DE} ч</span>
-                                <span className="small" style={{color:'#475569', border:'1px solid #e2e8f0', borderRadius:8, padding:'2px 6px'}}>Всего: {sums.ALL} ч</span>
+                                <span className="small" style={{color:'#475569', border:'1px solid #e2e8f0', borderRadius:8, padding:'2px 6px'}}>BA: {sums.BA} h</span>
+                                <span className="small" style={{color:'#475569', border:'1px solid #e2e8f0', borderRadius:8, padding:'2px 6px'}}>NC: {sums.NC} h</span>
+                                <span className="small" style={{color:'#475569', border:'1px solid #e2e8f0', borderRadius:8, padding:'2px 6px'}}>DE: {sums.DE} h</span>
+                                <span className="small" style={{color:'#475569', border:'1px solid #e2e8f0', borderRadius:8, padding:'2px 6px'}}>Total: {sums.ALL} h</span>
                               </div>
                               <div style={{marginTop:8}}>
                                 <table className="table">
                                   <thead>
                                     <tr>
-                                      <th style={{width:80}}>Тип</th>
-                                      <th>Название задачи</th>
-                                      <th style={{width:120}}>Оценка</th>
+                                      <th style={{width:80}}>Type</th>
+                                      <th>Task title</th>
+                                      <th style={{width:120}}>Estimate</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -446,7 +446,7 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
                       </div>
                     ))}
                     {presets.length === 0 && (
-                      <div className="small">Нет шаблонов</div>
+                      <div className="small">No templates</div>
                     )}
                   </div>
                 </div>
@@ -464,13 +464,13 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
             >
               <span
                 className="drag-handle"
-                title="Перетащить эпик"
+                title="Drag epic"
                 draggable
                 onDragStart={onEpicDragStart(epic.id)}
               >
                 ≡
               </span>
-              <div className="ep-title">{epic.title || 'Без названия'}</div>
+              <div className="ep-title">{epic.title || 'Untitled'}</div>
               <span className="ep-badge">{epic.tasks.length}</span>
               {editingByEpicId && editingByEpicId[epic.id] && editingByEpicId[epic.id].length > 0 && (
                 <div style={{marginLeft: 'auto', marginRight: 8}}>
@@ -478,24 +478,24 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
                 </div>
               )}
               <div className="ep-actions">
-                <button className="btn danger" title="Удалить" type="button" onClick={(e) => { e.stopPropagation(); removeEpic(epic.id); }}>✕</button>
+                <button className="btn danger" title="Delete" type="button" onClick={(e) => { e.stopPropagation(); removeEpic(epic.id); }}>✕</button>
               </div>
             </div>
           ))}
           {filteredEpics.length === 0 && (
-            <div className="small" style={{padding:8}}>Ничего не найдено</div>
+            <div className="small" style={{padding:8}}>Nothing found</div>
           )}
         </aside>
 
         <main className="ep-editor">
           {!activeEpic && (
-            <div className="small">Нет выбранного эпика. Создайте или выберите эпик слева.</div>
+            <div className="small">No epic selected. Create or select an epic on the left.</div>
           )}
           {activeEpic && (
             <div>
               <div style={{display:'grid', gridTemplateColumns:'1fr auto', gap:8, alignItems:'flex-end'}}>
                 <div>
-                  <label>Название эпика</label>
+                  <label>Epic title</label>
                   <input
                     value={activeEpic.title}
                     onChange={(e) => updateEpic(activeEpic.id, { title: e.target.value })}
@@ -503,11 +503,11 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
                     onBlur={handleBlur}
                     onInput={handleInput}
                     className={(errors && errors[activeEpic.id]?.epicTitle) ? 'invalid-input' : undefined}
-                    placeholder="Название эпика"
+                    placeholder="Epic title"
                   />
                 </div>
                 <div>
-                  <button className="btn" type="button" onClick={() => addTask(activeEpic.id)}>Добавить подзадачу</button>
+                  <button className="btn" type="button" onClick={() => addTask(activeEpic.id)}>Add a subtask</button>
                 </div>
               </div>
 
@@ -515,9 +515,9 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
                 <thead>
                   <tr>
                     <th style={{width:86}}></th>
-                    <th style={{width:90}}>Тип</th>
-                    <th>Название задачи</th>
-                    <th style={{width:120}}>Оценка (ч)</th>
+                    <th style={{width:90}}>Type</th>
+                    <th>Task title</th>
+                    <th style={{width:120}}>Total (h)</th>
                     <th style={{width:110}}></th>
                   </tr>
                 </thead>
@@ -537,7 +537,7 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
                         <div style={{display:'flex', alignItems:'center', gap:6}}>
                           <span
                             className="drag-handle"
-                            title="Перетащить задачу"
+                            title="Drag task"
                             draggable
                             onDragStart={onTaskDragStart(activeEpic.id, t.id)}
                           >
@@ -568,7 +568,7 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
                           onBlur={handleBlur}
                           onInput={handleInput}
                           className={tErr.title ? 'invalid-input' : undefined}
-                          placeholder="Название задачи"
+                          placeholder="Task title"
                         />
                       </td>
                       <td>
@@ -594,7 +594,7 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
                           <button
                             type="button"
                             className="icon-btn"
-                            title={expanded[t.id] ? 'Скрыть комментарий' : 'Показать комментарий'}
+                            title={expanded[t.id] ? 'Hide comment' : 'Show comment'}
                             onClick={() => setExpanded((s) => ({...s, [t.id]: !s[t.id]}))}
                           >
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -602,7 +602,7 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
                           <button
                             type="button"
                             className="icon-btn danger"
-                            title="Удалить"
+                            title="Delete"
                             onClick={() => removeTask(activeEpic.id, t.id)}
                           >
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
@@ -613,11 +613,11 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
                     {expanded[t.id] && (
                       <tr>
                         <td colSpan={5}>
-                          <label>Комментарий</label>
+                          <label>Comment</label>
                           <textarea
                             value={t.comment ?? ''}
                             onChange={(e) => updateTask(activeEpic.id, t.id, { comment: e.target.value })}
-                            placeholder="Комментарий (опционально)"
+                            placeholder="Comment (optional)"
                             style={{width:'100%', minHeight: 80}}
                           />
                         </td>
@@ -627,7 +627,7 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
                   );})}
                   {activeEpic.tasks.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="small">Нет подзадач. Нажмите «Добавить подзадачу».</td>
+                      <td colSpan={5} className="small">No subtasks. Click "Add subtask".</td>
                     </tr>
                   )}
                 </tbody>
@@ -638,7 +638,7 @@ export default function EpicEditor({ value, onChange, errors, editingByEpicId, e
       </div>
 
       {value.length === 0 && (
-        <div className="small" style={{padding:8}}>Нет эпиков. Нажмите «+ Эпик».</div>
+        <div className="small" style={{padding:8}}>No epics. Click "+ Epic".</div>
       )}
     </div>
   );

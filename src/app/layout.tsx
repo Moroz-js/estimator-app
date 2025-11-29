@@ -3,7 +3,7 @@ import { ReactNode } from "react";
 
 export const metadata = {
   title: "XMethod Backlog",
-  description: "Генерация YAML бэклога без бэкенда",
+  description: "YAML backlog generation without backend",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

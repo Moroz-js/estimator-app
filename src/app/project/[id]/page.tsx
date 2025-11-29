@@ -116,7 +116,7 @@ export default function ProjectPage() {
         .single();
 
       if (error) throw error;
-      if (!data?.payload) throw new Error("Проект не найден");
+      if (!data?.payload) throw new Error("Project not found");
 
       // Проверяем, является ли пользователь владельцем
       setIsOwner(data.owner_id === session.user.id);
@@ -134,7 +134,7 @@ export default function ProjectPage() {
         });
       });
     } catch (e: any) {
-      setError(e?.message || "Не удалось загрузить проект");
+      setError(e?.message || "Failed to load project");
     } finally {
       setLoading(false);
     }
@@ -165,13 +165,13 @@ export default function ProjectPage() {
       data: { session },
     } = await supabase.auth.getSession();
     if (!session) {
-      throw new Error("Сессия истекла, перезайдите");
+      throw new Error("Session expired, please log in again");
     }
 
     const { error } = await supabase
       .from("projects")
       .update({
-        name: state.project.name || "Без названия",
+        name: state.project.name || "Untitled",
         payload: state,
         updated_at: new Date().toISOString(),
       })
@@ -184,7 +184,7 @@ export default function ProjectPage() {
   };
 
   if (!projectId) {
-    return <div className="viewport">Некорректный идентификатор проекта</div>;
+    return <div className="viewport">Incorrect project identifier</div>;
   }
 
   if (loading) {
@@ -192,7 +192,7 @@ export default function ProjectPage() {
       <div className="viewport">
         <div className="card" style={{ width: "100%", maxWidth: 480 }}>
           <div className="card-header">
-            <h2>Загрузка проекта...</h2>
+            <h2>Loading project...</h2>
           </div>
         </div>
       </div>
@@ -208,7 +208,7 @@ export default function ProjectPage() {
           </div>
           <div className="grid">
             <div className="small" style={{ color: "#ef4444" }}>
-              {error || "Проект не найден"}
+              {error || "Project not found"}
             </div>
           </div>
         </div>

@@ -51,7 +51,7 @@ export default function ProjectMembers({ projectId, currentUserId, isOwner }: Pr
         
         membersWithEmails.push({
           ...member,
-          email: email || "Неизвестный",
+          email: email || "Unknown",
         });
       }
 
@@ -65,11 +65,11 @@ export default function ProjectMembers({ projectId, currentUserId, isOwner }: Pr
 
   const handleRemove = async (memberId: string, memberUserId: string) => {
     if (memberUserId === currentUserId) {
-      alert("Вы не можете удалить себя из проекта");
+      alert("You cannot remove yourself from the project");
       return;
     }
 
-    const ok = window.confirm("Удалить пользователя из проекта?");
+    const ok = window.confirm("Remove user from project?");
     if (!ok) return;
 
     setRemoving(memberId);
@@ -78,7 +78,7 @@ export default function ProjectMembers({ projectId, currentUserId, isOwner }: Pr
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
-        throw new Error("Сессия истекла");
+        throw new Error("Session expired");
       }
 
       const res = await fetch("/api/remove-member", {
@@ -94,14 +94,14 @@ export default function ProjectMembers({ projectId, currentUserId, isOwner }: Pr
       const data = await res.json();
       
       if (!res.ok) {
-        throw new Error(data.error || "Не удалось удалить участника");
+        throw new Error(data.error || "Failed to remove member");
       }
 
       // Обновляем список
       setMembers(members.filter(m => m.id !== memberId));
-      alert("Участник удалён");
+      alert("Member removed");
     } catch (e: any) {
-      alert(e?.message || "Не удалось удалить участника");
+      alert(e?.message || "Failed to remove member");
     } finally {
       setRemoving(null);
     }
@@ -112,14 +112,14 @@ export default function ProjectMembers({ projectId, currentUserId, isOwner }: Pr
   if (loading) {
     return (
       <div className="small" style={{ color: "#64748b" }}>
-        Загрузка участников...
+        Loading members...
       </div>
     );
   }
 
   return (
     <div style={{ marginTop: 16 }}>
-      <h4 style={{ marginBottom: 8 }}>Участники проекта ({members.length})</h4>
+      <h4 style={{ marginBottom: 8 }}>Project Members ({members.length})</h4>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {members.map((member) => (
           <div
@@ -137,8 +137,8 @@ export default function ProjectMembers({ projectId, currentUserId, isOwner }: Pr
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 500 }}>{member.email}</div>
               <div className="small" style={{ color: "#64748b" }}>
-                {member.role === "owner" ? "Владелец" : "Участник"}
-                {member.invited_by_email && ` • Пригласил: ${member.invited_by_email}`}
+                {member.role === "owner" ? "Owner" : "Member"}
+                {member.invited_by_email && ` • Invited by: ${member.invited_by_email}`}
               </div>
             </div>
             {isOwner && member.role !== "owner" && (
@@ -146,7 +146,7 @@ export default function ProjectMembers({ projectId, currentUserId, isOwner }: Pr
                 className="icon-btn danger"
                 onClick={() => handleRemove(member.id, member.user_id)}
                 disabled={removing === member.id}
-                title="Удалить участника"
+                title="Remove member"
               >
                 {removing === member.id ? "..." : "✕"}
               </button>

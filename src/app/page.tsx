@@ -116,7 +116,7 @@ export default function HomePage() {
           id: m.projects.id,
           name: m.projects.name,
           created_at: m.projects.created_at,
-          invited_by_email: m.invited_by_email || "Неизвестный",
+          invited_by_email: m.invited_by_email || "Unknown",
         })) ?? [];
 
         setGuestProjects(guestData);
@@ -133,13 +133,13 @@ export default function HomePage() {
       <div className="viewport">
         <div className="card" style={{ maxWidth: 420, width: "100%" }}>
           <div className="card-header">
-            <h2>Требуется вход</h2>
+            <h2>Login Required</h2>
           </div>
           <div className="grid">
             <div className="small" style={{ color: "#64748b" }}>
-              Сессия не найдена. Перейдите на страницу входа.
+              Session not found. Please go to the login page.
             </div>
-            <button className="btn primary" type="button" onClick={() => router.replace("/login")}>Перейти на /login</button>
+            <button className="btn primary" type="button" onClick={() => router.replace("/login")}>Go to /login</button>
           </div>
         </div>
       </div>
@@ -164,11 +164,11 @@ export default function HomePage() {
       <div className="card" style={{ width: "100%" }}>
         <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <h2>Мои проекты</h2>
-            <div className="small">Вы вошли как {userEmail}</div>
+            <h2>My Projects</h2>
+            <div className="small">Logged in as {userEmail}</div>
           </div>
           <button className="btn" type="button" onClick={handleSignOut}>
-            Выйти
+            Sign Out
           </button>
         </div>
         <div className="grid">
@@ -178,17 +178,17 @@ export default function HomePage() {
               type="button"
               onClick={() => router.push("/project/new")}
             >
-              Создать новый проект
+              Create New Project
             </button>
           </div>
           <div>
             {projectsLoading ? (
               <div className="small" style={{ color: "#64748b" }}>
-                Загрузка проектов...
+                Loading projects...
               </div>
             ) : projects.length === 0 ? (
               <div className="small" style={{ color: "#64748b" }}>
-                У вас пока нет проектов. Создайте первый.
+                You don't have any projects yet. Create your first one.
               </div>
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
@@ -210,10 +210,10 @@ export default function HomePage() {
                       }}
                       onClick={() => router.push(`/project/${p.id}`)}
                     >
-                      <div style={{ fontWeight: 600 }}>{p.name || "Без названия"}</div>
+                      <div style={{ fontWeight: 600 }}>{p.name || "Untitled"}</div>
                       {dateLabel && (
                         <div className="small" style={{ color: "#64748b" }}>
-                          Создан {dateLabel}
+                          Created {dateLabel}
                         </div>
                       )}
                     </button>
@@ -225,7 +225,7 @@ export default function HomePage() {
 
           {guestProjects.length > 0 && (
             <div style={{ marginTop: 24 }}>
-              <h3 style={{ marginBottom: 12 }}>Гостевые проекты</h3>
+              <h3 style={{ marginBottom: 12 }}>Guest Projects</h3>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
                 {guestProjects.map((p) => {
                   const dateLabel = p.created_at
@@ -247,10 +247,10 @@ export default function HomePage() {
                       }}
                       onClick={() => router.push(`/project/${p.id}`)}
                     >
-                      <div style={{ fontWeight: 600 }}>{p.name || "Без названия"}</div>
+                      <div style={{ fontWeight: 600 }}>{p.name || "Untitled"}</div>
                       {p.invited_by_email && (
                         <div className="small" style={{ color: "#6366f1" }}>
-                          👤 Пригласил: {p.invited_by_email}
+                          👤 Invited by: {p.invited_by_email}
                         </div>
                       )}
                       {dateLabel && (
